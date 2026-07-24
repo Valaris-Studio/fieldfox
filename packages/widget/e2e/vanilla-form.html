@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fieldfox — vanilla fill fixture</title>
+  </head>
+  <body>
+    <!--
+      Vanilla (no-framework) fill fixture for the real-browser proof of the C4
+      executor: native prototype setter + dispatched input/change, checkable
+      click(), select semantics, and readback-or-revert against a real layout
+      engine (jsdom has none). The React-19-controlled and react-hook-form matrix
+      — the actual guard for the undocumented React value-tracker dependency
+      (RESEARCH §2, §5 risk 1) — runs against the example hosts in card
+      INT-fill-flow (5ecdce29), which stands up Vite React apps + a mocked
+      provider. Do NOT duplicate that matrix here.
+    -->
+    <form id="signup">
+      <label>Full name <input id="name" name="name" type="text" /></label>
+      <label>Email <input id="email" name="email" type="email" /></label>
+      <label>Message <textarea id="message" name="message"></textarea></label>
+
+      <label>Country
+        <select id="country" name="country">
+          <option value="">—</option>
+          <option value="us">United States</option>
+          <option value="de">Germany</option>
+        </select>
+      </label>
+
+      <fieldset>
+        <legend>Plan</legend>
+        <label><input type="radio" name="plan" value="free" checked /> Free</label>
+        <label><input type="radio" name="plan" value="pro" /> Pro</label>
+      </fieldset>
+
+      <label><input id="terms" type="checkbox" name="terms" /> Accept terms</label>
+
+      <input id="readonly" name="ref" value="LOCKED" readonly />
+
+      <button type="submit">Sign up</button>
+    </form>
+
+    <field-fox target="#signup" endpoint="/api/fill"></field-fox>
+    <!-- The built widget is injected by the spec (page.addScriptTag) so the test
+         runs against dist/fieldfox.js, the real shipped artifact. -->
+  </body>
+</html>

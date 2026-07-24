@@ -1,6 +1,10 @@
+import type { FillRequest, RequestImage } from '@fieldfox/shared';
 import { createTrigger, type TriggerHandle } from './trigger.js';
 import { introspectForms, type IntrospectionResult } from './introspect.js';
 import { createPopover, type PopoverHandle } from './popover.js';
+import { requestFill, FillRequestError } from './client.js';
+import { applyFillPlan, type FillReport } from './fill.js';
+import { disableDuringFill } from './effects.js';
 
 // <field-fox> — the mount point. It never wraps, moves, or injects children into
 // the host form (RESEARCH §4); its own UI lives entirely in an OPEN shadow root.
@@ -16,6 +20,16 @@ import { createPopover, type PopoverHandle } from './popover.js';
 // are C4.
 
 export const ELEMENT_NAME = 'field-fox';
+
+// The fieldfox server's fill endpoint; overridable via `<field-fox endpoint="…">`.
+const DEFAULT_ENDPOINT = '/api/fill';
+
+// Wire schemaVersion sent in every FillRequest. Mirrors `SCHEMA_VERSION` in
+// @fieldfox/shared (asserted === 1 there), but declared LOCALLY as a literal:
+// value-importing it from shared would pull that package's zod runtime (~20KB
+// gzip) into the eager bundle and blow the 35KB budget (PLAN §0 "widget imports
+// shared TYPES, not zod runtime"; RESEARCH §4 top risk #3).
+const WIRE_SCHEMA_VERSION = 1;
 
 const STYLES = `
 :host {
@@ -60,7 +74,18 @@ export class FieldFoxElement extends HTMLElement {
   private popoverPanel: PopoverHandle | null = null;
   readonly forms: HTMLFormElement[] = [];
 
-  static readonly observedAttributes = ['target'];
+  // In-flight fill: the AbortController cancels the network call and the restore
+  // fn reverts the disable/shimmer effect. Both are cleared when the fill settles.
+  private inflight: AbortController | null = null;
+  private restoreEffect: (() => void) | null = null;
+  // The element the fill listener is bound to (the anchor at mount time), kept so
+  // teardown detaches from the exact same target even after `forms` is cleared.
+  private fillListenerTarget: HTMLElement | null = null;
+  private readonly onFillRequest = (event: Event): void => {
+    void this.runFill(event as CustomEvent);
+  };
+
+  static readonly observedAttributes = ['target', 'endpoint'];
 
   constructor() {
     super();
@@ -74,6 +99,9 @@ export class FieldFoxElement extends HTMLElement {
   }
 
   disconnectedCallback(): void {
+    this.abortFill();
+    this.fillListenerTarget?.removeEventListener('fieldfox:fill', this.onFillRequest);
+    this.fillListenerTarget = null;
     this.trigger?.destroy();
     this.trigger = null;
     this.popoverPanel?.destroy();
@@ -109,6 +137,11 @@ export class FieldFoxElement extends HTMLElement {
     this.discoverForms();
     this.trigger = createTrigger(shadow, this.anchor, () => this.openPanel());
     this.popoverPanel = createPopover(shadow, this.anchor, this.trigger.button);
+    // The popover dispatches `fieldfox:fill` on the anchor (the form in
+    // target-mode is a sibling, not a descendant, so bubbling alone can't reach
+    // us — listen on the anchor directly).
+    this.fillListenerTarget = this.anchor;
+    this.fillListenerTarget.addEventListener('fieldfox:fill', this.onFillRequest);
   }
 
   private discoverForms(): void {
@@ -139,16 +172,116 @@ export class FieldFoxElement extends HTMLElement {
     return introspectForms(roots);
   }
 
-  // Opens the input popover (C3). C4 will additionally introspect() and drive the
-  // popover handle (setBusy/showError/close) around the /api/fill round-trip.
+  // Opens the input popover (C3). Fill (C4) is driven by the `fieldfox:fill`
+  // handler below, which introspects, calls /api/fill, and applies the plan.
   private openPanel(): void {
     this.popoverPanel?.open();
+  }
+
+  private get endpoint(): string {
+    return this.getAttribute('endpoint') || DEFAULT_ENDPOINT;
+  }
+
+  private get siteKey(): string | undefined {
+    return this.getAttribute('site-key') || undefined;
+  }
+
+  // The full fill lifecycle (PLAN §1): introspect → disable affected fields under
+  // the shimmer → POST /api/fill → apply the FillPlan (readback-or-revert per
+  // field) → restore effects + report. The popover already set itself busy when
+  // the user pressed Fill; we own re-enabling it. Any error/abort restores every
+  // affected field and re-enables the panel.
+  private async runFill(event: CustomEvent): Promise<void> {
+    const panel = this.popoverPanel;
+    if (!panel) return;
+    this.abortFill(); // supersede any prior in-flight request
+
+    const { schema, resolve } = this.introspect();
+    // Only fields the plan could target get disabled + shimmered — never fields
+    // outside the schema (PLAN §0 "never touch fields not in the plan").
+    const affected = schema.fields
+      .map((f) => resolve(f.id))
+      .filter((el): el is Element => el != null);
+
+    const detail = (event.detail ?? {}) as {
+      contextText?: string;
+      images?: RequestImage[];
+    };
+    const request: FillRequest = {
+      schemaVersion: WIRE_SCHEMA_VERSION,
+      formSchema: schema,
+      contextText: detail.contextText ?? '',
+      images: detail.images ?? [],
+    };
+
+    const controller = new AbortController();
+    this.inflight = controller;
+    this.restoreEffect = disableDuringFill(affected);
+
+    try {
+      const plan = await requestFill(this.endpoint, request, {
+        siteKey: this.siteKey,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+
+      // Lift the disable/shimmer BEFORE applying: the `requesting` phase disabled
+      // the fields, but the `applying` phase must write them, and the executor
+      // refuses to fill a disabled control. Re-enable first, then set values.
+      this.restoreEffect?.();
+      this.restoreEffect = null;
+      const report = applyFillPlan(plan, resolve);
+      this.settleFill();
+      panel.showStatus(summarize(report));
+    } catch (error) {
+      if (controller.signal.aborted) return; // a newer request/teardown owns cleanup
+      this.settleFill();
+      const message =
+        error instanceof FillRequestError
+          ? 'Could not fill the form. Please try again.'
+          : 'Something went wrong while filling the form.';
+      panel.showError(message);
+    }
+  }
+
+  // Re-enable the panel and clear in-flight state, exactly once per fill. The
+  // disable/shimmer effect is already lifted on the success path; on error/abort
+  // restoreEffect is still set, so undo it here too. Fields are back to their
+  // planned-or-original values (the executor reverts per field); this only undoes
+  // transient UI state.
+  private settleFill(): void {
+    this.restoreEffect?.();
+    this.restoreEffect = null;
+    this.inflight = null;
+    this.popoverPanel?.setBusy(false);
+  }
+
+  // Abort an in-flight fill (supersession or disconnect): cancel the request and
+  // restore every affected field + the panel to a clean state.
+  private abortFill(): void {
+    if (this.inflight) {
+      this.inflight.abort();
+      this.inflight = null;
+    }
+    this.restoreEffect?.();
+    this.restoreEffect = null;
+    this.popoverPanel?.setBusy(false);
   }
 
   // The live popover handle so C4 can drive the panel through the fill lifecycle.
   get panel(): PopoverHandle | null {
     return this.popoverPanel;
   }
+}
+
+// A short, human-readable fill summary for the panel status region.
+function summarize(report: FillReport): string {
+  const filled = report.filled.length;
+  const left = report.left.length;
+  if (filled === 0 && left === 0) return 'No fields to fill.';
+  const parts = [`Filled ${filled} field${filled === 1 ? '' : 's'}`];
+  if (left > 0) parts.push(`left ${left} unchanged`);
+  return `${parts.join(', ')}. Review, then submit the form.`;
 }
 
 // customElements.define throws on a duplicate name OR a re-used constructor; two

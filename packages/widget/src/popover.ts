@@ -22,6 +22,8 @@ export interface PopoverHandle {
   setBusy(busy: boolean): void;
   isBusy(): boolean;
   showError(message: string): void;
+  // Non-error informational status — the C4 fill report ("Filled 3, left 1").
+  showStatus(message: string): void;
   // Introspection hooks for tests / C4; not part of the day-to-day surface.
   isTrapActive(): boolean;
   destroy(): void;
@@ -360,6 +362,10 @@ export function createPopover(
     status.textContent = message;
     status.classList.add('ff-error');
   }
+  function showStatus(message: string): void {
+    status.textContent = message;
+    status.classList.remove('ff-error');
+  }
   function clearStatus(): void {
     status.textContent = '';
     status.classList.remove('ff-error');
@@ -383,6 +389,7 @@ export function createPopover(
     setBusy,
     isBusy: () => busy,
     showError,
+    showStatus,
     isTrapActive: trapActive,
     destroy(): void {
       panel.remove();
