@@ -1,5 +1,6 @@
 import { createTrigger, type TriggerHandle } from './trigger.js';
 import { introspectForms, type IntrospectionResult } from './introspect.js';
+import { createPopover, type PopoverHandle } from './popover.js';
 
 // <field-fox> — the mount point. It never wraps, moves, or injects children into
 // the host form (RESEARCH §4); its own UI lives entirely in an OPEN shadow root.
@@ -8,10 +9,11 @@ import { introspectForms, type IntrospectionResult } from './introspect.js';
 //   (a) target:   <field-fox target="#checkout-form"> — selector against document
 //   (b) wrapping: <field-fox>…descendant <form>…</field-fox> — discovers forms
 //
-// Scope boundary (card C1): registration + mount modes + form discovery + the
-// anchored trigger only. The popover panel, introspection, and fill land in
-// C2/C3/C4. Clicking the trigger fires `fieldfox:trigger` and calls openPanel(),
-// a no-op stub those cards replace.
+// Scope boundary: registration + mount modes + form discovery + the anchored
+// trigger (C1), introspection (C2), and the input popover (C3). Clicking the
+// trigger fires `fieldfox:trigger` and opens the popover; the popover collects
+// context + images and emits `fieldfox:fill`. The network call + fill executor
+// are C4.
 
 export const ELEMENT_NAME = 'field-fox';
 
@@ -54,6 +56,8 @@ const STYLES = `
 
 export class FieldFoxElement extends HTMLElement {
   private trigger: TriggerHandle | null = null;
+  // Not named `popover` — HTMLElement already reflects a `popover` string attr.
+  private popoverPanel: PopoverHandle | null = null;
   readonly forms: HTMLFormElement[] = [];
 
   static readonly observedAttributes = ['target'];
@@ -72,6 +76,8 @@ export class FieldFoxElement extends HTMLElement {
   disconnectedCallback(): void {
     this.trigger?.destroy();
     this.trigger = null;
+    this.popoverPanel?.destroy();
+    this.popoverPanel = null;
     this.forms.length = 0;
   }
 
@@ -102,6 +108,7 @@ export class FieldFoxElement extends HTMLElement {
 
     this.discoverForms();
     this.trigger = createTrigger(shadow, this.anchor, () => this.openPanel());
+    this.popoverPanel = createPopover(shadow, this.anchor, this.trigger.button);
   }
 
   private discoverForms(): void {
@@ -132,9 +139,15 @@ export class FieldFoxElement extends HTMLElement {
     return introspectForms(roots);
   }
 
-  // No-op panel stub. Cards C3/C4 replace this with the real Popover-API panel.
+  // Opens the input popover (C3). C4 will additionally introspect() and drive the
+  // popover handle (setBusy/showError/close) around the /api/fill round-trip.
   private openPanel(): void {
-    /* intentionally empty until card C3 */
+    this.popoverPanel?.open();
+  }
+
+  // The live popover handle so C4 can drive the panel through the fill lifecycle.
+  get panel(): PopoverHandle | null {
+    return this.popoverPanel;
   }
 }
 

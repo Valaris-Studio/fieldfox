@@ -16,6 +16,9 @@ importers:
       hono:
         specifier: ^4
         version: 4.12.31
+      zod:
+        specifier: ^4
+        version: 4.4.3
     devDependencies:
       typescript:
         specifier: ^5.9
