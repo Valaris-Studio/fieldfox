@@ -115,3 +115,12 @@ test('disconnecting removes the trigger and disconnects its observers', () => {
   expect(resizeDisconnect).toHaveBeenCalled();
   expect(intersectionDisconnect).toHaveBeenCalled();
 });
+
+test('embed attribute names never exist as element properties (React 19 property-vs-attribute heuristic)', () => {
+  // React 19 sets a JSX attr as a PROPERTY when `name in el`; a getter-only
+  // property then throws and unmounts the host app (e2e finding #1).
+  const el = document.createElement('field-fox');
+  for (const attr of ['target', 'endpoint', 'site-key']) {
+    expect(attr in el, `'${attr}' must not be an element property`).toBe(false);
+  }
+});

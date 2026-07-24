@@ -178,7 +178,12 @@ export class FieldFoxElement extends HTMLElement {
     this.popoverPanel?.open();
   }
 
-  private get endpoint(): string {
+  // Deliberately NOT named `endpoint`: React 19 assigns a JSX attribute as a
+  // PROPERTY when the name exists on the element (`'endpoint' in el`), and a
+  // getter-only property throws and unmounts the entire React tree (e2e
+  // finding #1). Accessor names must stay disjoint from embed attribute names
+  // so React falls through to setAttribute.
+  private get fillEndpoint(): string {
     return this.getAttribute('endpoint') || DEFAULT_ENDPOINT;
   }
 
@@ -219,7 +224,7 @@ export class FieldFoxElement extends HTMLElement {
     this.restoreEffect = disableDuringFill(affected);
 
     try {
-      const plan = await requestFill(this.endpoint, request, {
+      const plan = await requestFill(this.fillEndpoint, request, {
         siteKey: this.siteKey,
         signal: controller.signal,
       });

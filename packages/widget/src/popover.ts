@@ -159,15 +159,28 @@ export function createPopover(
     typeof (panel as unknown as { showPopover?: unknown }).showPopover ===
     'function';
 
-  function positionFallback(): void {
-    // Anchor near the host's top-right; the top layer isn't available so pin the
-    // panel with fixed positioning and the theming z-index.
+  // BOTH open paths must pin the panel: a [popover] in the top layer with
+  // inset:unset otherwise renders at its static flow position (the <field-fox>
+  // element's spot, often the page bottom) — position:fixed there is
+  // unreachable by scrolling (e2e finding #2, WebKit). Called after the panel
+  // is rendered so its own rect is measurable for viewport clamping.
+  function positionNearHost(): void {
     const rect = host.getBoundingClientRect();
     panel.style.position = 'fixed';
+    panel.style.margin = '0';
+    const panelRect = panel.getBoundingClientRect();
+    const vh = window.innerHeight || 0;
+    const vw = window.innerWidth || 0;
+    const clamp = (v: number, max: number) => Math.min(Math.max(v, 8), Math.max(max, 8));
+    panel.style.top = `${clamp(rect.top, vh - panelRect.height - 8)}px`;
+    panel.style.left = `${clamp(rect.left, vw - panelRect.width - 8)}px`;
+  }
+
+  function positionFallback(): void {
+    // No top layer available: fixed positioning + the theming z-index.
     panel.style.zIndex = 'var(--fieldfox-z-index)';
-    panel.style.top = `${Math.max(rect.top, 8)}px`;
-    panel.style.left = `${Math.max(rect.left, 8)}px`;
     panel.style.display = 'block';
+    positionNearHost();
   }
 
   function doOpen(): void {
@@ -176,6 +189,7 @@ export function createPopover(
     clearStatus();
     if (usePopoverApi()) {
       (panel as unknown as { showPopover: () => void }).showPopover();
+      positionNearHost();
     } else {
       positionFallback();
     }

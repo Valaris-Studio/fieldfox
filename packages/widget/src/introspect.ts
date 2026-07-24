@@ -334,12 +334,22 @@ function isVisible(el: HTMLElement): boolean {
   const hasLayout = rect.width > 0 || rect.height > 0;
   if (!hasLayout) return true; // jsdom / not-yet-laid-out: don't over-hide
 
-  const offScreen =
-    rect.bottom <= 0 ||
-    rect.right <= 0 ||
-    rect.top >= (window.innerHeight || Infinity) ||
-    rect.left >= (window.innerWidth || Infinity);
-  return !offScreen;
+  // Hidden means UNREACHABLE, not merely outside the current viewport: a long
+  // form's below-the-fold fields are reachable by scrolling and must stay
+  // fillable (e2e finding #3). The anti-exfiltration traps this guards against
+  // park fields at negative coordinates (left:-9999px) or beyond the document's
+  // scrollable extent — compare in document coordinates, not viewport ones.
+  const doc = document.documentElement;
+  const absTop = rect.top + (window.scrollY || 0);
+  const absLeft = rect.left + (window.scrollX || 0);
+  const docHeight = Math.max(doc.scrollHeight, window.innerHeight || 0);
+  const docWidth = Math.max(doc.scrollWidth, window.innerWidth || 0);
+  const unreachable =
+    absTop + rect.height <= 0 ||
+    absLeft + rect.width <= 0 ||
+    absTop >= docHeight ||
+    absLeft >= docWidth;
+  return !unreachable;
 }
 
 // --- Author hints (data-ff-*) ---------------------------------------------
