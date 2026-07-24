@@ -1,1 +1,15 @@
-export { SCHEMA_VERSION } from './contract.js';
+export {
+  SCHEMA_VERSION,
+  AuthorHints,
+  FieldKind,
+  FieldOption,
+  FormField,
+  FormSchema,
+  RequestImage,
+  FillRequest,
+  FillAction,
+  Fill,
+  FillPlan,
+  ModelFillPlan,
+  fillPlanJsonSchema,
+} from './contract.js';
