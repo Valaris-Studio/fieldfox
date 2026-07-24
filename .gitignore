@@ -8,6 +8,10 @@ node_modules/
 dist/
 coverage/
 *.log
+*.tsbuildinfo
 
 .DS_Store
-.serena/cache/
+
+# local tooling — not part of the project
+.serena/
+.claude/
