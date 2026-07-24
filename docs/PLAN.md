@@ -37,6 +37,12 @@ The decisions doc. Grounded in `docs/RESEARCH.md`; mirrors the Valaris board
 | Privacy default | Nothing at rest; pino-redacted metadata-only logs (site key, field counts, tokens, latency, error class) | §6 |
 | Test subjects | Backplane frontend (`../internal/frontend`) + Vario frontend (`../vario/frontend`, react-hook-form) | Board definition — hardest fill targets in-house |
 | Tooling | Vite library mode, vitest (unit), Playwright (flows + framework fill matrix); Serena MCP mandatory for all agents incl. subagents | Board definition, house principles |
+| **Product license** | **MIT** for all packages; a root `LICENSE` + per-package `license` field. GPL-3.0 references (bitwarden) are **pattern-study-only, never copied** — enforced in review | RESEARCH §8(3) — permissive matches the reference set + maximizes embed adoption; avoids GPL contamination |
+| **Version-skew policy** | `schemaVersion` mismatch is a **policy, not just a field**: the server serves any widget whose **major** schemaVersion it supports; on major mismatch it returns a structured refuse (426-style) with a machine-readable reason, and the widget renders a specific "update required" message. Any change to FormSchema/FillRequest/FillPlan **shape** must bump `schemaVersion` (snapshot-test enforced in shared) | RESEARCH §8(2,10) — CDN-pinned widget can't redeploy in lockstep with a self-hosted server |
+| **Operational-counter persistence** | Rate/budget counters + kill-switch state live behind a **pluggable store** (in-memory default for single-instance; Redis/KV adapter for scaled deploys). "Nothing at rest" covers **user content**, not operational counters. "Alerting" = a log-level event + a deployer-wired webhook/emit hook | RESEARCH §8(4) — in-memory-only silently breaks the kill switch across instances/restarts |
+| **Server distribution** | Publish an npm package exporting a **Hono app/handler** plus a thin runnable entry; a documented config schema maps **multiple** site keys → `{origins, dailyBudget}` via env or a JSON config | RESEARCH §8(8) — INT-pilot needs a runnable, configured server |
+| **CI** | GitHub Actions: unit tests everywhere; the **bundle-size budget (35KB eager / 75KB ceiling) is a blocking check**; Playwright fill matrix (Chromium+WebKit) blocks merge — not just SMOKE.md steps | RESEARCH §8(5) — the size budget + fill matrix are the #1-risk early-warning system |
+| **Focus vs trap** | The popover's focus trap is **suspended during the `applying` phase**; focus is saved before the fill loop and restored after. Per-field real focus/blur is used only where a framework demonstrably needs it | RESEARCH §8(6) — real per-field focus/blur (fill) vs the panel focus trap (C3) are otherwise in tension |
 
 **Out of scope for v1** (from the definition, reaffirmed): Android/iOS native
 SDKs; any LLM credential or direct LLM call in the client; browser-extension
@@ -241,6 +247,25 @@ Criteria / Depends On) is derived from these rows at authoring time.
   misfires, style clashes). DoD: successful fill demo on both; findings filed
   with repro. Depends on: INT-fill-flow. Out of scope: shipping to either app's
   production.
+
+### Epic F — Release engineering
+
+- **F1 — CI pipeline** (to add to the board). Goal: GitHub Actions running
+  lint + unit tests on every push; the widget **bundle-size budget is a
+  blocking assertion** (≤35KB eager / ≤75KB total gzip); the Playwright fill
+  matrix (Chromium+WebKit) runs and blocks merge. DoD: a red build on an
+  oversized bundle or a failing fill-matrix test, proven with a deliberate
+  regression. Likely files: `.github/workflows/ci.yml`, a size-check script.
+  Cites RESEARCH §8(5). Depends on: A2 (and INT-fill-flow for the e2e job).
+- **F2 — Release & publish** (to add to the board). Goal: changesets for
+  version bumps; decide which packages are public (`@fieldfox/widget` +
+  `@fieldfox/shared`, since the widget's published `.d.ts` references shared —
+  **bundle shared's types into the widget** so a CDN consumer needs no
+  `@fieldfox/shared`); automated SRI-hash + exact-version snippet generation
+  for the docs; a dry-run publish. DoD: `pnpm changeset version` + a dry-run
+  `pnpm publish` succeed; the generated snippet's SRI validates. Likely files:
+  `.changeset/`, `scripts/gen-snippet.mjs`. Cites RESEARCH §8(5). Depends on:
+  A2, and the widget build (C-epic).
 
 ### MILESTONE — Build, smoke, accept (exactly one, last in the DAG)
 

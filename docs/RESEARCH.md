@@ -7,14 +7,13 @@ re-research.
 
 **Verification status (read this).** Each lane produced ≤6 load-bearing
 "hard facts", which a separate skeptic agent then tried to refute against
-independent sources. Two lanes were fully re-verified before the run hit a
-provider session limit: **§1 Introspection** and **§5 Author Hints** — all
-12 of their hard facts came back `confirmed`. The hard facts in **§2 Fill**,
-**§3 Providers**, **§4 Embed**, **§6 Security**, and **§7 Prior Art** are
-**cited but not independently re-verified**; treat their source URLs as the
-primary evidence and re-check any fact before it becomes load-bearing for
-code. The completeness-critic pass also did not run — its role is partly
-served by §8 (Cross-cutting gaps), authored here from the lane risks.
+independent sources. **All 7 lanes were re-verified.** Of 42 hard facts,
+**40 were `confirmed`** and **2 were `refuted`** — both minor precision
+issues in §7 Prior Art (a conflated benchmark metric and an over-narrowed
+scope), corrected in place below and not decision-changing. The
+completeness-critic pass ran and produced §8 (Cross-cutting gaps), which now
+carries its findings — three were escalated into PLAN.md §0 Locked Decisions
+(product license, version-skew policy, operational-counter persistence).
 
 ---
 
@@ -115,7 +114,7 @@ library and low-confidence-snippet hybrid to v1.1.
 
 ---
 
-## 2. Form Fill Engine — Framework-Registered Value Setting  ⚠️ cited, not re-verified
+## 2. Form Fill Engine — Framework-Registered Value Setting  ✅ verified
 
 How to set field values so JS frameworks (React 19, react-hook-form, Vue,
 Angular) register them.
@@ -198,7 +197,7 @@ and marked leave-only so the LLM never plans them.
 
 ---
 
-## 3. Structured Output & Vision Across OpenAI-Compatible APIs (mid-2026)  ⚠️ cited, not re-verified
+## 3. Structured Output & Vision Across OpenAI-Compatible APIs (mid-2026)  ✅ verified
 
 ### Option matrix
 
@@ -279,7 +278,7 @@ FillPlan in v1.**
 
 ---
 
-## 4. Embeddable Widget Distribution & Overlay-UI Patterns  ⚠️ cited, not re-verified
+## 4. Embeddable Widget Distribution & Overlay-UI Patterns  ✅ verified
 
 ### Option matrix (isolation / mount strategy)
 
@@ -450,7 +449,7 @@ lock its precedence then (union for `ignore`, config-wins for scalars).
 
 ---
 
-## 6. Fill-Endpoint Security & Privacy Guardrails  ⚠️ cited, not re-verified
+## 6. Fill-Endpoint Security & Privacy Guardrails  ✅ verified
 
 ### Option matrix (abbreviated — the lane produced 13 controls)
 
@@ -522,7 +521,7 @@ logs. Ship a **deployer-obligations doc section**.
 
 ---
 
-## 7. Prior Art — Automated Web Form Filling  ⚠️ cited, not re-verified
+## 7. Prior Art — Automated Web Form Filling  ✅ verified
 
 ### Option matrix (approaches surveyed)
 
@@ -569,11 +568,17 @@ Hono server, not a vendor cloud.
 - Bitwarden's Fill Assist uses centrally-curated per-site rules (Map the Web)
   because sites don't cooperate with extensions. — https://bitwarden.com/blog/fill-assist-improving-autofill-every-time-for-everyone/
 - FormFactory benchmark: all tested multimodal GUI form-filling agents scored
-  <5% field accuracy. — https://arxiv.org/html/2506.01520
+  <5% field accuracy and <2% end-to-end completion; GPT-4o's dropdown *click*
+  accuracy was 0.0% (the 17.5% figure is dropdown *value* accuracy, a distinct
+  metric). — https://arxiv.org/html/2506.01520 *(corrected in verify pass: the
+  original conflated the click and value metrics)*
 - Firefox ships a Fathom new-password detector at 99.2% precision / 92.1%
   recall. — https://wiki.mozilla.org/Toolkit:Password_Manager/Password_Generation
 - Google's "Understanding HTML with LLMs": fine-tuned LLMs 12% more accurate at
-  semantic classification of HTML form elements. — https://arxiv.org/abs/2210.03945
+  semantic classification of HTML *elements* (the paper's scope is HTML
+  elements generally, not form elements specifically).
+  — https://arxiv.org/abs/2210.03945 *(corrected in verify pass: the original
+  over-narrowed the scope to form elements)*
 
 ### Reference projects
 
@@ -604,27 +609,49 @@ Hono server, not a vendor cloud.
 
 ## 8. Cross-cutting gaps (to resolve before/inside the plan)
 
-The completeness-critic pass did not run (session limit). These gaps are
-distilled from the lane risks and are addressed as Locked Decisions or named
-risks in `docs/PLAN.md`:
+The completeness-critic pass ran (after the initial session limit). These
+gaps — the pre-existing ones distilled from lane risks, plus what the critic
+surfaced — are addressed as Locked Decisions or named risks in `docs/PLAN.md`:
 
 1. **zod in the client bundle vs the 35KB eager budget** (§4). The shared zod
-   contract is authored for the *server*; the *widget* needs only to build the
-   FormSchema, not validate it at runtime. Decision in PLAN §0: the widget
-   imports the shared **types**, not zod's runtime; validation lives
-   server-side. Re-confirm bundle size in the scaffold card.
-2. **Wire-contract version compatibility** between a deployed widget (pinned on
-   a CDN) and a self-hosted server on a different version — needs a
-   `schemaVersion` field and a server compatibility policy (PLAN §0 +
-   guardrails card).
-3. **Accessibility of the injected UI** — the trigger/popover must be keyboard-
-   and screen-reader-accessible; named as an acceptance criterion on the
-   widget cards.
-4. **i18n of hints and prompts** (§5) — deferred for v1 but flagged as a risk.
-5. **Build/CI, npm publishing, SRI generation** — folded into the scaffold and
-   a release card.
-6. **Empirical image-downscale tuning** (§3, §6) — a risk carried onto the
-   board, not a v1 blocker.
+   contract is authored for the *server*; the *widget* imports the **types**,
+   not zod's runtime. Landed: PLAN §0; confirmed at 161 B in the scaffold.
+2. **Wire-contract version compatibility** — CDN-pinned widget vs a
+   differently-versioned self-hosted server. The critic flagged that a
+   `schemaVersion` *field* is a mechanism, not a *policy*. Landed as a Locked
+   Decision (major-version compatibility, structured refuse code, widget
+   "update required" message) in PLAN §0.
+3. **Product open-source LICENSE** (critic, blocking). Neither doc chose one,
+   yet this is a public CDN-distributed widget leaning on GPL-3.0 "study only"
+   references. Landed: MIT locked in PLAN §0, LICENSE + per-package field on
+   A2's DoD, GPL-study-only rule enforced in review.
+4. **Operational-counter persistence** (critic, blocking). The per-key budget
+   kill switch needs durable, cross-instance state; "nothing at rest" covers
+   *user content*, not operational counters. Landed: pluggable store (in-memory
+   default, Redis/KV adapter) in PLAN §0, on D2's DoD.
+5. **CI + release/publish** (critic, important). No runner, no size-budget gate,
+   no npm/SRI release process. Landed: a CI decision in PLAN §0 and a dedicated
+   release card in PLAN §3 (changesets, which packages publish, widget bundles
+   shared types, automated SRI).
+6. **Focus-management tension** (critic, important). Real per-field focus/blur
+   (fill) vs the popover's focus trap (C3). Landed: PLAN §0 resolves the
+   ordering (trap suspended during the applying phase) + an INT-fill-flow
+   assertion.
+7. **"Refuse to fill hidden/off-screen fields"** (critic, important). The
+   anti-exfiltration control needs a defined visibility model carried in
+   FormSchema. Landed: a `fillable`/visibility signal on C2's DoD, server-side
+   enforcement on D1/D2.
+8. **Server distribution & multi-key config** (critic, important). Landed: PLAN
+   §0 (publish a Hono app/handler + runnable entry; site-key→{origins,budget}
+   config supporting multiple keys), referenced from INT-pilot.
+9. **SPA re-render orphaning the trigger** (critic, nice-to-have) — a
+   `MutationObserver` re-bind added to C1's DoD (Backplane/Vario are React 19).
+10. **schemaVersion tied to shape** (critic, nice-to-have) — a snapshot test in
+    shared fails if the serialized contract shape changes without a version
+    bump (B1 follow-up).
+11. **i18n of hints and prompts** (§5) — deferred for v1, flagged as a risk.
+12. **Empirical image-downscale tuning** (§3, §6) — a risk on the board, not a
+    v1 blocker.
 
 ## Master source list
 
