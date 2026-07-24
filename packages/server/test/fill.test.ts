@@ -1,7 +1,25 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { FillPlan, FillRequest } from '@fieldfox/shared';
 import { createApp } from '../src/app.js';
+import { resolveConfig } from '../src/config.js';
+import { InMemoryStore } from '../src/store.js';
 import { ResponseFormatUnsupported, type ChatCompletion } from '../src/llm.js';
+
+// Permissive guardrail config so D1's fill tests exercise the handler, not the
+// guardrails (those are covered in guardrails.test.ts). Every /api/fill request
+// carries the matching key + origin.
+const TEST_KEY = 'ffx_pk_d1testkey0000000000000000000000';
+const TEST_ORIGIN = 'https://test.example';
+function testApp(llmCaller?: ChatCompletion) {
+  return createApp({
+    llmCaller,
+    store: new InMemoryStore(),
+    logger: () => {}, // silence metadata logs in test output
+    config: resolveConfig({
+      siteKeys: { [TEST_KEY]: { origins: [TEST_ORIGIN], dailyTokenBudget: 10_000_000 } },
+    }),
+  });
+}
 
 function validRequest(): FillRequest {
   return {
@@ -29,7 +47,11 @@ function validRequest(): FillRequest {
 function post(app: ReturnType<typeof createApp>, body: unknown) {
   return app.request('/api/fill', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      'x-fieldfox-key': TEST_KEY,
+      origin: TEST_ORIGIN,
+    },
     body: JSON.stringify(body),
   });
 }
@@ -45,7 +67,7 @@ function mockCaller(...responses: string[]): ChatCompletion {
 
 describe('POST /api/fill', () => {
   test('health still responds', async () => {
-    const app = createApp(mockCaller());
+    const app = testApp(mockCaller());
     const res = await app.request('/health');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
@@ -58,7 +80,7 @@ describe('POST /api/fill', () => {
         { fieldId: 'f_country', action: 'set', value: 'us' },
       ],
     });
-    const app = createApp(mockCaller(modelOut));
+    const app = testApp(mockCaller(modelOut));
     const res = await post(app, validRequest());
     expect(res.status).toBe(200);
     const plan = (await res.json()) as FillPlan;
@@ -66,9 +88,12 @@ describe('POST /api/fill', () => {
     expect(plan.fills).toContainEqual({ fieldId: 'f_name', action: 'set', value: 'Grace Hopper' });
   });
 
-  test('invalid request (bad schemaVersion) → 400 with zod issues', async () => {
-    const app = createApp(mockCaller());
-    const bad = { ...validRequest(), schemaVersion: 99 };
+  test('invalid request (malformed formSchema) → 400 with zod issues', async () => {
+    // schemaVersion stays valid so the request clears the version-skew guardrail
+    // (bad schemaVersion is now a 426, covered in guardrails.test.ts) and reaches
+    // the fill handler's zod re-validation.
+    const app = testApp(mockCaller());
+    const bad = { ...validRequest(), formSchema: { fields: 'not-an-array' } };
     const res = await post(app, bad);
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string; issues: unknown[] };
@@ -84,7 +109,7 @@ describe('POST /api/fill', () => {
         { fieldId: 'f_ghost', action: 'set', value: 'injected' },
       ],
     });
-    const app = createApp(mockCaller(modelOut));
+    const app = testApp(mockCaller(modelOut));
     const res = await post(app, validRequest());
     expect(res.status).toBe(200);
     const plan = (await res.json()) as FillPlan;
@@ -96,7 +121,7 @@ describe('POST /api/fill', () => {
     const modelOut = JSON.stringify({
       fills: [{ fieldId: 'f_country', action: 'set', value: 'atlantis' }],
     });
-    const app = createApp(mockCaller(modelOut));
+    const app = testApp(mockCaller(modelOut));
     const res = await post(app, validRequest());
     expect(res.status).toBe(200);
     const plan = (await res.json()) as FillPlan;
@@ -114,7 +139,7 @@ describe('POST /api/fill', () => {
       })
       .mockImplementationOnce(async () => 'not json at all {{{')
       .mockImplementationOnce(async () => goodOut);
-    const app = createApp(caller);
+    const app = testApp(caller);
     const res = await post(app, validRequest());
     expect(res.status).toBe(200);
     const plan = (await res.json()) as FillPlan;
@@ -129,7 +154,7 @@ describe('POST /api/fill', () => {
         throw new ResponseFormatUnsupported('strict not supported');
       })
       .mockImplementation(async () => 'still not json');
-    const app = createApp(caller);
+    const app = testApp(caller);
     const res = await post(app, validRequest());
     expect(res.status).toBe(502);
     const body = (await res.json()) as { error: string };
@@ -137,10 +162,14 @@ describe('POST /api/fill', () => {
   });
 
   test('malformed body (not JSON) → 400', async () => {
-    const app = createApp(mockCaller());
+    const app = testApp(mockCaller());
     const res = await app.request('/api/fill', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'x-fieldfox-key': TEST_KEY,
+        origin: TEST_ORIGIN,
+      },
       body: 'this is not json',
     });
     expect(res.status).toBe(400);

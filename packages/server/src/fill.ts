@@ -13,6 +13,8 @@ import {
   FillPlanUnrecoverable,
   type ChatCompletion,
 } from './llm.js';
+import { reconcile } from './guardrails.js';
+import type { RateBudgetStore } from './store.js';
 
 // The /api/fill handler: zod-validate → prompt+call (injected) → re-validate &
 // clean → respond. The LLM caller is injected so tests run with no network and
@@ -52,7 +54,11 @@ function cleanPlan(model: ModelFillPlan, fields: FormField[]): FillPlan {
   return { fills };
 }
 
-export function createFillHandler(injectedCaller?: ChatCompletion) {
+// `store` is passed through so the handler can reconcile the guardrail's
+// pre-call token estimate with real usage once the LLM answers. When the app is
+// built without guardrails (bare unit paths), the reconcile context vars are
+// absent and reconciliation is skipped.
+export function createFillHandler(injectedCaller?: ChatCompletion, store?: RateBudgetStore) {
   return async (c: Context): Promise<Response> => {
     let body: unknown;
     try {
@@ -71,6 +77,14 @@ export function createFillHandler(injectedCaller?: ChatCompletion) {
     try {
       const modelPlan = await planWithLadder(request, caller);
       const plan = cleanPlan(modelPlan, request.formSchema.fields);
+      // Reconcile the daily-budget charge with actual usage. planWithLadder does
+      // not surface a token count yet, so pass null (estimate stands) — the seam
+      // is here for when the ladder returns usage (RESEARCH §6 budget).
+      const siteKey = c.get('fieldfoxSiteKey');
+      const policy = c.get('fieldfoxPolicy');
+      if (store && siteKey && policy) {
+        await reconcile(store, siteKey, policy, c.get('fieldfoxEstimatedTokens') ?? 0, null);
+      }
       return c.json(plan, 200);
     } catch (err) {
       if (err instanceof FillPlanUnrecoverable) {
