@@ -10,6 +10,6 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "lint": "pnpm -r --if-present lint",
-    "dev": "echo 'dev harness comes with examples card' && exit 0"
+    "dev": "node scripts/dev.mjs"
   }
 }

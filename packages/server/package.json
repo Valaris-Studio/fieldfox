@@ -13,10 +13,13 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev": "tsc -b && node dist/serve.js",
+    "start": "node dist/serve.js"
   },
   "dependencies": {
     "@fieldfox/shared": "workspace:*",
+    "@hono/node-server": "^1",
     "hono": "^4",
     "zod": "^4"
   },

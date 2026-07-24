@@ -1,0 +1,99 @@
+<!doctype html>
+<!--
+  fieldfox embed — the whole integration is the two tags at the bottom of <body>:
+    1. <script src=".../fieldfox.js"> loads the widget, which self-registers the
+       <field-fox> element (in production: pin an exact version + SRI hash).
+    2. <field-fox target="#signup-form" endpoint="…" site-key="ffx_pk_…"> points
+       it at your form and your self-hosted fieldfox server. The site key is
+       public — the server scopes it to an origin allowlist and a daily budget.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trailhead Makers — workshop signup</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 32rem; padding: 0 1rem; }
+      form { display: grid; gap: 0.5rem; }
+      label { font-weight: 600; margin-top: 0.5rem; }
+      fieldset label, label.inline { font-weight: 400; margin-top: 0; display: block; }
+      input, select, textarea { font: inherit; padding: 0.4rem; }
+      input[type='radio'], input[type='checkbox'] { margin-right: 0.4rem; }
+      fieldset { border: 1px solid #ccc; border-radius: 4px; }
+      button { margin-top: 1rem; padding: 0.5rem; font: inherit; }
+      .muted { color: #666; font-size: 0.875rem; margin: 0; }
+    </style>
+  </head>
+  <body>
+    <h1>Trailhead Makers workshop signup</h1>
+    <p class="muted">
+      Fill it in yourself, or click the fieldfox button at the form's top-right
+      corner and paste your details (text or a photo of them).
+    </p>
+
+    <form id="signup-form" method="get">
+      <label for="full-name">Full name</label>
+      <input id="full-name" name="full-name" type="text" autocomplete="name" required />
+
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email" required />
+
+      <label for="phone">Mobile phone</label>
+      <!-- data-ff-hint / data-ff-format are author hints: trusted guidance that
+           reaches the model on a separate lane from page-derived text -->
+      <input
+        id="phone"
+        name="phone"
+        type="tel"
+        autocomplete="tel"
+        data-ff-hint="Mobile preferred; we text workshop reminders"
+        data-ff-format="+1 555 000 0000"
+      />
+
+      <label for="event-date">Preferred workshop date</label>
+      <input id="event-date" name="event-date" type="date" />
+
+      <label for="tshirt-size">T-shirt size</label>
+      <select id="tshirt-size" name="tshirt-size" autocomplete="off">
+        <option value="">Choose a size…</option>
+        <option value="s">Small</option>
+        <option value="m">Medium</option>
+        <option value="l">Large</option>
+        <option value="xl">X-Large</option>
+      </select>
+
+      <fieldset>
+        <legend>Session</legend>
+        <label><input type="radio" id="session-morning" name="session" value="morning" /> Morning (9–12)</label>
+        <label><input type="radio" id="session-afternoon" name="session" value="afternoon" /> Afternoon (1–4)</label>
+        <label><input type="radio" id="session-full" name="session" value="full-day" /> Full day</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Interests</legend>
+        <label><input type="checkbox" id="interest-woodworking" name="interests" value="woodworking" /> Woodworking</label>
+        <label><input type="checkbox" id="interest-ceramics" name="interests" value="ceramics" /> Ceramics</label>
+        <label><input type="checkbox" id="interest-welding" name="interests" value="welding" /> Welding</label>
+      </fieldset>
+
+      <label for="promo-code">Promo code</label>
+      <!-- data-ff-ignore: fieldfox never reads or fills this field — codes must
+           be typed by the person who owns them -->
+      <input id="promo-code" name="promo-code" type="text" autocomplete="off" data-ff-ignore />
+
+      <label for="notes">Anything we should know?</label>
+      <textarea id="notes" name="notes" rows="4" placeholder="Accessibility needs, questions…"></textarea>
+
+      <button type="submit">Sign up</button>
+    </form>
+
+    <!-- The fieldfox embed. This dev page loads the workspace IIFE build
+         directly; the site key matches the dev server config in scripts/dev.mjs. -->
+    <script src="../../packages/widget/dist/fieldfox.js"></script>
+    <field-fox
+      target="#signup-form"
+      endpoint="http://localhost:8787/api/fill"
+      site-key="ffx_pk_dev0000000000000000000000000000"
+    ></field-fox>
+  </body>
+</html>
