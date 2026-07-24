@@ -1,0 +1,174 @@
+{
+  "app": "backplane",
+  "url": "http://localhost:5173/adpublic-chile/boards/4dfa537d-7941-4394-836e-54a4342d50b3/kanban",
+  "target": "form:has(input[placeholder=\"Card title\"])",
+  "before": [
+    {
+      "idx": 0,
+      "tag": "input",
+      "type": "text",
+      "id": "_r_f_-title",
+      "name": null,
+      "label": "Title",
+      "value": "",
+      "disabled": false,
+      "hidden": false
+    },
+    {
+      "idx": 1,
+      "tag": "input",
+      "type": "date",
+      "id": "_r_f_-dueDate",
+      "name": null,
+      "label": "Due Date",
+      "value": "",
+      "disabled": false,
+      "hidden": false
+    },
+    {
+      "idx": 2,
+      "tag": "input",
+      "type": "text",
+      "id": "_r_f_-labels",
+      "name": null,
+      "label": "Labels",
+      "value": "",
+      "disabled": false,
+      "hidden": false
+    }
+  ],
+  "createButtonDisabledBefore": true,
+  "mount": {
+    "hasShadowRoot": true,
+    "hasTrigger": true
+  },
+  "triggerProbe": {
+    "present": true,
+    "rect": {
+      "x": 930.53125,
+      "y": 128.890625,
+      "w": 28,
+      "h": 28
+    },
+    "onScreen": true,
+    "pointerEvents": "auto",
+    "visibility": "visible",
+    "hostAriaHidden": null,
+    "bodyPointerEvents": "auto"
+  },
+  "statusText": "Filled 3 fields. Review, then submit the form.",
+  "interactionLog": [
+    "trigger: real pointer click OK",
+    "context-input: real keyboard fill OK",
+    "fill-button: real pointer click OK"
+  ],
+  "dialogStillOpen": true,
+  "after": [
+    {
+      "idx": 0,
+      "tag": "input",
+      "type": "text",
+      "id": "_r_f_-title",
+      "name": null,
+      "label": "Title",
+      "value": "High priority bug: the login button double-submits on slow connections, causing duplicate POSTs.",
+      "disabled": false,
+      "hidden": false
+    },
+    {
+      "idx": 1,
+      "tag": "input",
+      "type": "file",
+      "id": null,
+      "name": null,
+      "label": "",
+      "value": "",
+      "disabled": false,
+      "hidden": true
+    },
+    {
+      "idx": 2,
+      "tag": "input",
+      "type": "file",
+      "id": null,
+      "name": null,
+      "label": "",
+      "value": "",
+      "disabled": false,
+      "hidden": true
+    },
+    {
+      "idx": 3,
+      "tag": "input",
+      "type": "date",
+      "id": "_r_f_-dueDate",
+      "name": null,
+      "label": "Due Date",
+      "value": "2026-07-31",
+      "disabled": false,
+      "hidden": false
+    },
+    {
+      "idx": 4,
+      "tag": "input",
+      "type": "text",
+      "id": "_r_f_-labels",
+      "name": null,
+      "label": "Labels",
+      "value": "frontend, auth",
+      "disabled": false,
+      "hidden": false
+    }
+  ],
+  "diff": [
+    {
+      "idx": 0,
+      "tag": "input",
+      "type": "text",
+      "id": "_r_f_-title",
+      "name": null,
+      "label": "Title",
+      "value": "High priority bug: the login button double-submits on slow connections, causing duplicate POSTs.",
+      "disabled": false,
+      "hidden": false,
+      "before": "",
+      "changed": true
+    },
+    {
+      "idx": 1,
+      "tag": "input",
+      "type": "file",
+      "id": null,
+      "name": null,
+      "label": "",
+      "value": "",
+      "disabled": false,
+      "hidden": true,
+      "before": "",
+      "changed": false
+    },
+    {
+      "idx": 2,
+      "tag": "input",
+      "type": "file",
+      "id": null,
+      "name": null,
+      "label": "",
+      "value": "",
+      "disabled": false,
+      "hidden": true,
+      "before": "",
+      "changed": false
+    }
+  ],
+  "createButtonDisabledAfter": false,
+  "consoleErrors": [
+    "[warning] WebSocket connection to 'ws://localhost:5173/ws/workspaces/adpublic-chile/events' failed: WebSocket is closed before the connection is established.",
+    "[warning] GSAP target  not found. https://gsap.com",
+    "[error] WebSocket connection to 'ws://localhost:5173/ws/workspaces/adpublic-chile/events' failed: Error during WebSocket handshake: Unexpected response code: 403",
+    "[error] WebSocket connection to 'ws://localhost:5173/ws/workspaces/adpublic-chile/events' failed: Error during WebSocket handshake: Unexpected response code: 403",
+    "[error] WebSocket connection to 'ws://localhost:5173/ws/workspaces/adpublic-chile/events' failed: Error during WebSocket handshake: Unexpected response code: 403",
+    "[error] WebSocket connection to 'ws://localhost:5173/ws/workspaces/adpublic-chile/events' failed: Error during WebSocket handshake: Unexpected response code: 403"
+  ],
+  "failedRequests": []
+}

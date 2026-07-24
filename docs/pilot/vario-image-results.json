@@ -1,0 +1,86 @@
+{
+  "page": "/api-signup (image fill)",
+  "url": "http://localhost:5174/api-signup",
+  "before": [
+    {
+      "idx": 0,
+      "tag": "input",
+      "type": "email",
+      "id": "signup-email",
+      "name": null,
+      "label": "Email corporativo *",
+      "value": "",
+      "disabled": false,
+      "hidden": false
+    },
+    {
+      "idx": 1,
+      "tag": "input",
+      "type": "text",
+      "id": "signup-org",
+      "name": null,
+      "label": "Nombre de organización *",
+      "value": "",
+      "disabled": false,
+      "hidden": false
+    }
+  ],
+  "statusText": "Filled 2 fields. Review, then submit the form.",
+  "after": [
+    {
+      "idx": 0,
+      "tag": "input",
+      "type": "email",
+      "id": "signup-email",
+      "name": null,
+      "label": "Email corporativo *",
+      "value": "flota@patagoniaverde.cl",
+      "disabled": false,
+      "hidden": false
+    },
+    {
+      "idx": 1,
+      "tag": "input",
+      "type": "text",
+      "id": "signup-org",
+      "name": null,
+      "label": "Nombre de organización *",
+      "value": "Transportes Patagonia Verde Ltda",
+      "disabled": false,
+      "hidden": false
+    }
+  ],
+  "diff": [
+    {
+      "idx": 0,
+      "tag": "input",
+      "type": "email",
+      "id": "signup-email",
+      "name": null,
+      "label": "Email corporativo *",
+      "value": "flota@patagoniaverde.cl",
+      "disabled": false,
+      "hidden": false,
+      "before": "",
+      "changed": true
+    },
+    {
+      "idx": 1,
+      "tag": "input",
+      "type": "text",
+      "id": "signup-org",
+      "name": null,
+      "label": "Nombre de organización *",
+      "value": "Transportes Patagonia Verde Ltda",
+      "disabled": false,
+      "hidden": false,
+      "before": "",
+      "changed": true
+    }
+  ],
+  "consoleErrors": [
+    "[warning] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+    "[warning] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+  ],
+  "failedRequests": []
+}

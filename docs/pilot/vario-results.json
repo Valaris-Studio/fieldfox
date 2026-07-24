@@ -1,0 +1,225 @@
+{
+  "app": "vario",
+  "runs": [
+    {
+      "page": "/api-signup",
+      "target": "form",
+      "url": "http://localhost:5174/api-signup",
+      "before": [
+        {
+          "idx": 0,
+          "tag": "input",
+          "type": "email",
+          "id": "signup-email",
+          "name": null,
+          "label": "Email corporativo *",
+          "value": "",
+          "disabled": false,
+          "hidden": false
+        },
+        {
+          "idx": 1,
+          "tag": "input",
+          "type": "text",
+          "id": "signup-org",
+          "name": null,
+          "label": "Nombre de organización *",
+          "value": "",
+          "disabled": false,
+          "hidden": false
+        }
+      ],
+      "mount": {
+        "hasShadowRoot": true,
+        "hasTrigger": true
+      },
+      "triggerProbe": {
+        "present": true,
+        "rect": {
+          "x": 867,
+          "y": 269.6875,
+          "w": 28,
+          "h": 28
+        },
+        "onScreen": true,
+        "pointerEvents": "auto",
+        "visibility": "visible",
+        "hostAriaHidden": null,
+        "bodyPointerEvents": "auto"
+      },
+      "statusText": "Filled 2 fields. Review, then submit the form.",
+      "interactionLog": [
+        "trigger: real pointer click OK",
+        "context-input: real keyboard fill OK",
+        "fill-button: real pointer click OK"
+      ],
+      "after": [
+        {
+          "idx": 0,
+          "tag": "input",
+          "type": "email",
+          "id": "signup-email",
+          "name": null,
+          "label": "Email corporativo *",
+          "value": "operaciones@grupoandino.cl",
+          "disabled": false,
+          "hidden": false
+        },
+        {
+          "idx": 1,
+          "tag": "input",
+          "type": "text",
+          "id": "signup-org",
+          "name": null,
+          "label": "Nombre de organización *",
+          "value": "Grupo Andino Logística SpA",
+          "disabled": false,
+          "hidden": false
+        }
+      ],
+      "diff": [
+        {
+          "idx": 0,
+          "tag": "input",
+          "type": "email",
+          "id": "signup-email",
+          "name": null,
+          "label": "Email corporativo *",
+          "value": "operaciones@grupoandino.cl",
+          "disabled": false,
+          "hidden": false,
+          "before": "",
+          "changed": true
+        },
+        {
+          "idx": 1,
+          "tag": "input",
+          "type": "text",
+          "id": "signup-org",
+          "name": null,
+          "label": "Nombre de organización *",
+          "value": "Grupo Andino Logística SpA",
+          "disabled": false,
+          "hidden": false,
+          "before": "",
+          "changed": true
+        }
+      ],
+      "consoleErrors": [
+        "[warning] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+        "[warning] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+      ],
+      "failedRequests": []
+    },
+    {
+      "page": "/signup",
+      "target": ".w-full.max-w-md",
+      "url": "http://localhost:5174/signup",
+      "before": [
+        {
+          "idx": 0,
+          "tag": "input",
+          "type": "text",
+          "id": "org-name",
+          "name": null,
+          "label": "Nombre de la organización",
+          "value": "",
+          "disabled": false,
+          "hidden": false
+        },
+        {
+          "idx": 1,
+          "tag": "input",
+          "type": "email",
+          "id": "email",
+          "name": null,
+          "label": "Email corporativo del administrador",
+          "value": "",
+          "disabled": false,
+          "hidden": false
+        }
+      ],
+      "mount": {
+        "hasShadowRoot": true,
+        "hasTrigger": true
+      },
+      "triggerProbe": {
+        "present": true,
+        "rect": {
+          "x": -22,
+          "y": 994,
+          "w": 28,
+          "h": 28
+        },
+        "onScreen": true,
+        "pointerEvents": "auto",
+        "visibility": "visible",
+        "hostAriaHidden": null,
+        "bodyPointerEvents": "auto"
+      },
+      "statusText": "No fields to fill.",
+      "interactionLog": [
+        "trigger: real click FAILED (TimeoutError: locator.click: Timeout 4000ms exceeded.); used programmatic el.click()",
+        "context-input: real keyboard fill OK",
+        "fill-button: real pointer click OK"
+      ],
+      "after": [
+        {
+          "idx": 0,
+          "tag": "input",
+          "type": "text",
+          "id": "org-name",
+          "name": null,
+          "label": "Nombre de la organización",
+          "value": "",
+          "disabled": false,
+          "hidden": false
+        },
+        {
+          "idx": 1,
+          "tag": "input",
+          "type": "email",
+          "id": "email",
+          "name": null,
+          "label": "Email corporativo del administrador",
+          "value": "",
+          "disabled": false,
+          "hidden": false
+        }
+      ],
+      "diff": [
+        {
+          "idx": 0,
+          "tag": "input",
+          "type": "text",
+          "id": "org-name",
+          "name": null,
+          "label": "Nombre de la organización",
+          "value": "",
+          "disabled": false,
+          "hidden": false,
+          "before": "",
+          "changed": false
+        },
+        {
+          "idx": 1,
+          "tag": "input",
+          "type": "email",
+          "id": "email",
+          "name": null,
+          "label": "Email corporativo del administrador",
+          "value": "",
+          "disabled": false,
+          "hidden": false,
+          "before": "",
+          "changed": false
+        }
+      ],
+      "consoleErrors": [
+        "[warning] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+        "[warning] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+      ],
+      "failedRequests": []
+    }
+  ]
+}
