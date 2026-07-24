@@ -16,10 +16,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fieldfox/shared": "workspace:*",
     "hono": "^4"
   },
   "devDependencies": {
-    "@fieldfox/shared": "workspace:*",
     "typescript": "^5.9",
     "vitest": "^3"
   }
