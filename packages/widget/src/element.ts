@@ -1,4 +1,5 @@
 import { createTrigger, type TriggerHandle } from './trigger.js';
+import { introspectForms, type IntrospectionResult } from './introspect.js';
 
 // <field-fox> — the mount point. It never wraps, moves, or injects children into
 // the host form (RESEARCH §4); its own UI lives entirely in an OPEN shadow root.
@@ -120,6 +121,15 @@ export class FieldFoxElement extends HTMLElement {
     // wrapping-mode: descendant forms in the light DOM. The host form is never
     // moved — we only reference it.
     this.forms.push(...this.querySelectorAll('form'));
+  }
+
+  // Introspects the discovered form(s) into a FormSchema plus an id→element
+  // resolver (card C2). Falls back to the host element itself when no form was
+  // discovered so form-less containers are still walked. C3/C4 call this to
+  // build the fill request and later map FillPlan entries back to live elements.
+  introspect(): IntrospectionResult {
+    const roots = this.forms.length > 0 ? this.forms : [this];
+    return introspectForms(roots);
   }
 
   // No-op panel stub. Cards C3/C4 replace this with the real Popover-API panel.
