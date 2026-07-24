@@ -1,0 +1,13 @@
+# secrets — .mcp.json carries the Valaris API key
+.mcp.json
+.env
+.env.*
+!.env.example
+
+node_modules/
+dist/
+coverage/
+*.log
+
+.DS_Store
+.serena/cache/
