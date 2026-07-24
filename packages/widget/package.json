@@ -12,11 +12,12 @@
     }
   },
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && tsc -b",
     "test": "vitest run"
   },
   "devDependencies": {
     "@fieldfox/shared": "workspace:*",
+    "jsdom": "^25",
     "typescript": "^5.9",
     "vite": "^7",
     "vitest": "^3"

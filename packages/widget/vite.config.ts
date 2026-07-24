@@ -13,5 +13,9 @@ export default defineConfig({
   },
   test: {
     include: ['test/**/*.test.ts'],
+    // The element + trigger are DOM-native; jsdom gives us document/customElements.
+    // Layout and observers it lacks are stubbed in test/setup.ts.
+    environment: 'jsdom',
+    setupFiles: ['test/setup.ts'],
   },
 });
