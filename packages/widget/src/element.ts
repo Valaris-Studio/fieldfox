@@ -4,7 +4,7 @@ import { introspectForms, type IntrospectionResult } from './introspect.js';
 import { createPopover, type PopoverHandle } from './popover.js';
 import { requestFill, FillRequestError } from './client.js';
 import { applyFillPlan, type FillReport } from './fill.js';
-import { disableDuringFill } from './effects.js';
+import { startInflightEffect } from './effects.js';
 
 // <field-fox> — the mount point. It never wraps, moves, or injects children into
 // the host form (RESEARCH §4); its own UI lives entirely in an OPEN shadow root.
@@ -95,7 +95,8 @@ export class FieldFoxElement extends HTMLElement {
   private boundAnchor: HTMLElement | null = null;
 
   // In-flight fill: the AbortController cancels the network call and the restore
-  // fn reverts the disable/shimmer effect. Both are cleared when the fill settles.
+  // fn reverts the disable + border-tracer effect. Both are cleared when the fill
+  // settles.
   private inflight: AbortController | null = null;
   private restoreEffect: (() => void) | null = null;
   // The element the fill listener is bound to (the anchor at mount time), kept so
@@ -294,18 +295,19 @@ export class FieldFoxElement extends HTMLElement {
     return value ? value.slice(0, MAX_FORM_ID) : undefined;
   }
 
-  // The full fill lifecycle (PLAN §1): introspect → disable affected fields under
-  // the shimmer → POST /api/fill → apply the FillPlan (readback-or-revert per
-  // field) → restore effects + report. The popover already set itself busy when
-  // the user pressed Fill; we own re-enabling it. Any error/abort restores every
-  // affected field and re-enables the panel.
+  // The full fill lifecycle (PLAN §1): introspect → disable affected fields +
+  // mount the border-tracer overlay → POST /api/fill → apply the FillPlan
+  // (readback-or-revert per field) → restore effects + report. The popover already
+  // set itself busy when the user pressed Fill; we own re-enabling it. Any
+  // error/abort restores every affected field, tears the overlay down, and
+  // re-enables the panel.
   private async runFill(event: CustomEvent): Promise<void> {
     const panel = this.popoverPanel;
     if (!panel) return;
     this.abortFill(); // supersede any prior in-flight request
 
     const { schema, resolve } = this.introspect();
-    // Only fields the plan could target get disabled + shimmered — never fields
+    // Only fields the plan could target get disabled + dimmed — never fields
     // outside the schema (PLAN §0 "never touch fields not in the plan").
     const affected = schema.fields
       .map((f) => resolve(f.id))
@@ -329,7 +331,13 @@ export class FieldFoxElement extends HTMLElement {
 
     const controller = new AbortController();
     this.inflight = controller;
-    this.restoreEffect = disableDuringFill(affected);
+    // The tracer overlay mounts into the widget's shadow root and tracks the
+    // anchor rect; `shadowRoot` is non-null here (set in the constructor). If it
+    // were ever absent we'd still get the field-disable safety from a bare
+    // disable path, but the getter guarantees it, so pass it straight through.
+    this.restoreEffect = this.shadowRoot
+      ? startInflightEffect(this.shadowRoot, this.anchor, affected)
+      : null;
 
     try {
       const plan = await requestFill(this.fillEndpoint, request, {
@@ -338,7 +346,7 @@ export class FieldFoxElement extends HTMLElement {
       });
       if (controller.signal.aborted) return;
 
-      // Lift the disable/shimmer BEFORE applying: the `requesting` phase disabled
+      // Lift the disable + tracer BEFORE applying: the `requesting` phase disabled
       // the fields, but the `applying` phase must write them, and the executor
       // refuses to fill a disabled control. Re-enable first, then set values.
       this.restoreEffect?.();
@@ -354,7 +362,7 @@ export class FieldFoxElement extends HTMLElement {
   }
 
   // Re-enable the panel and clear in-flight state, exactly once per fill. The
-  // disable/shimmer effect is already lifted on the success path; on error/abort
+  // disable + tracer effect is already lifted on the success path; on error/abort
   // restoreEffect is still set, so undo it here too. Fields are back to their
   // planned-or-original values (the executor reverts per field); this only undoes
   // transient UI state.

@@ -66,7 +66,7 @@ async function mockRequestsContaining(marker: string): Promise<MockRequest[]> {
   return requests.filter((r) => r.prompt.includes(marker));
 }
 
-test('plain-html host: trigger → popover → fill; shimmer in flight; decoy ignored; never auto-submits', async ({ page }) => {
+test('plain-html host: trigger → popover → fill; border-tracer in flight; decoy ignored; never auto-submits', async ({ page }) => {
   const marker = nonce();
   await page.goto(PLAIN_URL);
 
@@ -91,10 +91,11 @@ test('plain-html host: trigger → popover → fill; shimmer in flight; decoy ig
   await openPanelAndFill(page, `I am Jane Doe (jane@doe.dev), medium shirt, afternoon session. ${marker}`);
 
   // In flight (the mock holds the response ~800ms): planned fields are disabled
-  // under the shimmer; the data-ff-ignore decoy is never part of the request,
-  // so it is never disabled.
+  // and dimmed while the border-tracer overlay circles the form; the
+  // data-ff-ignore decoy is never part of the request, so it is never disabled.
   await expect(page.locator('#full-name')).toBeDisabled();
-  await expect(page.locator('#full-name')).toHaveClass(/ff-fill-shimmer/);
+  await expect(page.locator('#full-name')).toHaveClass(/ff-fill-dim/);
+  await expect(page.locator('field-fox [part="inflight-overlay"]')).toBeVisible();
   await expect(page.locator('#promo-code')).toBeEnabled();
 
   await expect(status).toContainText('Review, then submit', { timeout: 15_000 });
@@ -113,9 +114,10 @@ test('plain-html host: trigger → popover → fill; shimmer in flight; decoy ig
   // …and the decoy stays empty (stripped client-side by data-ff-ignore).
   await expect(page.locator('#promo-code')).toHaveValue('');
 
-  // Fields re-enabled after completion.
+  // Fields re-enabled after completion; the tracer overlay is torn down.
   await expect(page.locator('#full-name')).toBeEnabled();
-  await expect(page.locator('#full-name')).not.toHaveClass(/ff-fill-shimmer/);
+  await expect(page.locator('#full-name')).not.toHaveClass(/ff-fill-dim/);
+  await expect(page.locator('field-fox [part="inflight-overlay"]')).toHaveCount(0);
 
   // The form was never submitted: no submit event, no GET-navigation.
   expect(await page.evaluate(() => (window as { __ffSubmits?: number } & Window).__ffSubmits)).toBe(0);
@@ -210,7 +212,8 @@ test('error path: ladder exhausts → 502 → popover error, fields restored and
   await expect(page.locator('#full-name')).toHaveValue('Original Owner');
   await expect(page.locator('#email')).toHaveValue('');
   await expect(page.locator('#email')).toBeEnabled();
-  await expect(page.locator('#full-name')).not.toHaveClass(/ff-fill-shimmer/);
+  await expect(page.locator('#full-name')).not.toHaveClass(/ff-fill-dim/);
+  await expect(page.locator('field-fox [part="inflight-overlay"]')).toHaveCount(0);
   await expect(fillButton).toBeEnabled();
 
   // The server really walked the ladder: strict rung rejected, then the

@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { disableDuringFill } from '../src/effects.js';
+import { disableDuringFill, startInflightEffect } from '../src/effects.js';
 
-// The disable effect must reach LIGHT-DOM host fields (a shadow stylesheet can't),
-// and every mutation it makes must be fully reversible on restore() — the
-// non-destructive invariant covers UI state, not just field values.
+// Two surfaces under test:
+//   disableDuringFill — the SAFETY invariant (disable affected fields, restore
+//     only what we changed, fully reversible). Fields live in the HOST's LIGHT
+//     DOM, so its cosmetic dim style is injected into document.head, not a shadow
+//     stylesheet.
+//   startInflightEffect — composes the disable with the border-tracer overlay
+//     mounted into the widget's shadow root; one idempotent cleanup reverses both.
 
 let fields: HTMLInputElement[] = [];
 
@@ -18,6 +22,13 @@ function mount(): HTMLInputElement[] {
   return fields;
 }
 
+function makeShadowHost(): { host: HTMLElement; shadow: ShadowRoot } {
+  const host = document.createElement('div');
+  const shadow = host.attachShadow({ mode: 'open' });
+  document.body.appendChild(host);
+  return { host, shadow };
+}
+
 beforeEach(() => {
   mount();
 });
@@ -25,9 +36,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   document.body.innerHTML = '';
-  document
-    .querySelectorAll('style[data-ff-effect]')
-    .forEach((s) => s.remove());
+  document.querySelectorAll('style[data-ff-effect]').forEach((s) => s.remove());
 });
 
 test('disables every affected field and restore() re-enables them all', () => {
@@ -47,22 +56,25 @@ test('a field that was ALREADY disabled stays disabled after restore', () => {
   expect(fields[1].disabled).toBe(true); // its prior state is preserved, not clobbered
 });
 
-test('injects a keyframes stylesheet into document head and removes it on restore', () => {
+test('injects a dim stylesheet into document head and removes it on restore', () => {
   const before = document.querySelectorAll('style[data-ff-effect]').length;
   const restore = disableDuringFill(fields);
   expect(document.querySelectorAll('style[data-ff-effect]').length).toBe(before + 1);
-  expect(document.head.querySelector('style[data-ff-effect]')?.textContent).toMatch(
-    /@keyframes/,
-  );
+  // The injected style dims affected fields; it is NOT the old shimmer keyframes.
+  const injected = document.head.querySelector('style[data-ff-effect]')?.textContent ?? '';
+  expect(injected).toMatch(/ff-fill-dim/);
+  expect(injected).not.toMatch(/@keyframes/);
 
   restore();
   expect(document.querySelectorAll('style[data-ff-effect]').length).toBe(before);
 });
 
-test('adds a shimmer class to fields while in flight and removes it on restore', () => {
+test('dims affected fields while in flight and clears the class on restore — no shimmer class', () => {
   const restore = disableDuringFill(fields);
-  const shimmering = fields.filter((f) => f.className.includes('ff-'));
-  expect(shimmering.length).toBe(fields.length);
+  const dimmed = fields.filter((f) => f.classList.contains('ff-fill-dim'));
+  expect(dimmed.length).toBe(fields.length);
+  // The retired per-field shimmer class must never appear again.
+  for (const f of fields) expect(f.classList.contains('ff-fill-shimmer')).toBe(false);
 
   restore();
   for (const f of fields) expect(f.className).toBe('');
@@ -78,4 +90,42 @@ test('restore() is idempotent (double completion / error+abort races)', () => {
 test('an empty field set is a no-op that still returns a usable restore()', () => {
   const restore = disableDuringFill([]);
   expect(() => restore()).not.toThrow();
+});
+
+test('startInflightEffect mounts the tracer overlay in the shadow root and cleanup removes it', () => {
+  const { shadow, host } = makeShadowHost();
+  const overlaySelector = '.ff-inflight-overlay[part="inflight-overlay"]';
+
+  const cleanup = startInflightEffect(shadow, host, fields);
+  const overlay = shadow.querySelector(overlaySelector);
+  expect(overlay).not.toBeNull();
+  // The overlay is inert to pointer + assistive tech.
+  expect(overlay?.getAttribute('aria-hidden')).toBe('true');
+  // It also carries the disable safety.
+  for (const f of fields) expect(f.disabled).toBe(true);
+
+  cleanup();
+  expect(shadow.querySelector(overlaySelector)).toBeNull();
+  for (const f of fields) expect(f.disabled).toBe(false);
+});
+
+test('startInflightEffect cleanup is idempotent (settle can run after the success-path lift)', () => {
+  const { shadow, host } = makeShadowHost();
+  const cleanup = startInflightEffect(shadow, host, fields);
+
+  cleanup();
+  expect(() => cleanup()).not.toThrow();
+  expect(shadow.querySelector('.ff-inflight-overlay')).toBeNull();
+});
+
+test('the tracer overlay detaches its scroll/resize listeners on cleanup', () => {
+  const { shadow, host } = makeShadowHost();
+  const removeSpy = vi.spyOn(window, 'removeEventListener');
+
+  const cleanup = startInflightEffect(shadow, host, fields);
+  cleanup();
+
+  const removed = removeSpy.mock.calls.map((c) => c[0]);
+  expect(removed).toContain('scroll');
+  expect(removed).toContain('resize');
 });
