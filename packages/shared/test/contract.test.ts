@@ -62,7 +62,7 @@ describe('field fixtures round-trip', () => {
 });
 
 describe('FillRequest', () => {
-  test('valid request round-trips and defaults images to []', () => {
+  test('valid request round-trips and defaults images to [], form-level inputs absent', () => {
     const req = FillRequest.parse({
       schemaVersion: SCHEMA_VERSION,
       formSchema: { fields: [textField, hintedField, selectField] },
@@ -70,6 +70,58 @@ describe('FillRequest', () => {
     });
     expect(req.images).toEqual([]);
     expect(req.formSchema.fields).toHaveLength(3);
+    expect(req.formContext).toBeUndefined();
+    expect(req.formId).toBeUndefined();
+  });
+
+  test('formContext and formId round-trip when present', () => {
+    const req = FillRequest.parse({
+      schemaVersion: SCHEMA_VERSION,
+      formSchema: { fields: [] },
+      contextText: '',
+      formContext: 'Annual leave request for the EU entity; dates are DD.MM.YYYY.',
+      formId: 'leave-request-eu',
+    });
+    expect(req.formContext).toBe('Annual leave request for the EU entity; dates are DD.MM.YYYY.');
+    expect(req.formId).toBe('leave-request-eu');
+  });
+
+  test('formContext at the 2000-char cap is accepted; over it is rejected', () => {
+    expect(
+      FillRequest.parse({
+        schemaVersion: SCHEMA_VERSION,
+        formSchema: { fields: [] },
+        contextText: '',
+        formContext: 'x'.repeat(2000),
+      }).formContext,
+    ).toHaveLength(2000);
+    expect(() =>
+      FillRequest.parse({
+        schemaVersion: SCHEMA_VERSION,
+        formSchema: { fields: [] },
+        contextText: '',
+        formContext: 'x'.repeat(2001),
+      }),
+    ).toThrow();
+  });
+
+  test('formId at the 128-char cap is accepted; over it is rejected', () => {
+    expect(
+      FillRequest.parse({
+        schemaVersion: SCHEMA_VERSION,
+        formSchema: { fields: [] },
+        contextText: '',
+        formId: 'x'.repeat(128),
+      }).formId,
+    ).toHaveLength(128);
+    expect(() =>
+      FillRequest.parse({
+        schemaVersion: SCHEMA_VERSION,
+        formSchema: { fields: [] },
+        contextText: '',
+        formId: 'x'.repeat(129),
+      }),
+    ).toThrow();
   });
 
   test('a wrong schemaVersion is rejected', () => {

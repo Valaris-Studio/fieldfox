@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import type { FillRequest } from '@fieldfox/shared';
+import { SCHEMA_VERSION, type FillRequest } from '@fieldfox/shared';
 import { buildPrompt } from '../src/prompt.js';
 
 function baseRequest(overrides: Partial<FillRequest> = {}): FillRequest {
   return {
-    schemaVersion: 1,
+    schemaVersion: SCHEMA_VERSION,
     contextText: 'My name is Ada Lovelace and I was born 1815-12-10.',
     images: [],
     formSchema: {

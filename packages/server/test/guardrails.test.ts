@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import type { FillRequest } from '@fieldfox/shared';
+import { SCHEMA_VERSION, type FillRequest } from '@fieldfox/shared';
 import { createApp } from '../src/app.js';
 import { resolveConfig, type GuardrailConfig } from '../src/config.js';
 import { InMemoryStore } from '../src/store.js';
@@ -30,7 +30,7 @@ function build(config: GuardrailConfig, store = new InMemoryStore()) {
 
 function validRequest(overrides: Partial<FillRequest> = {}): FillRequest {
   return {
-    schemaVersion: 1,
+    schemaVersion: SCHEMA_VERSION,
     contextText: 'Name is Grace Hopper.',
     images: [],
     formSchema: { fields: [{ id: 'f_name', kind: 'text', labelCandidates: ['Name'], fillable: true }] },
@@ -164,11 +164,11 @@ describe('guardrails', () => {
 
   test('unsupported schemaVersion (wrong major) → 426', async () => {
     const app = build(baseConfig());
-    const res = await post(app, { body: { ...validRequest(), schemaVersion: 2 } });
+    const res = await post(app, { body: { ...validRequest(), schemaVersion: SCHEMA_VERSION + 1 } });
     expect(res.status).toBe(426);
     const body = (await res.json()) as { error: string; serverSchemaVersion: number };
     expect(body.error).toBe('schema_version_unsupported');
-    expect(body.serverSchemaVersion).toBe(1);
+    expect(body.serverSchemaVersion).toBe(SCHEMA_VERSION);
   });
 
   test('version skew is checked before auth (stale widget without a key still gets 426)', async () => {

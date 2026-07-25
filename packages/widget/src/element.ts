@@ -25,11 +25,11 @@ export const ELEMENT_NAME = 'field-fox';
 const DEFAULT_ENDPOINT = '/api/fill';
 
 // Wire schemaVersion sent in every FillRequest. Mirrors `SCHEMA_VERSION` in
-// @fieldfox/shared (asserted === 1 there), but declared LOCALLY as a literal:
-// value-importing it from shared would pull that package's zod runtime (~20KB
-// gzip) into the eager bundle and blow the 35KB budget (PLAN §0 "widget imports
-// shared TYPES, not zod runtime"; RESEARCH §4 top risk #3).
-const WIRE_SCHEMA_VERSION = 1;
+// @fieldfox/shared (a drift-guard test pins it there), but declared LOCALLY as a
+// literal: value-importing it from shared would pull that package's zod runtime
+// (~20KB gzip) into the eager bundle and blow the 35KB budget (PLAN §0 "widget
+// imports shared TYPES, not zod runtime"; RESEARCH §4 top risk #3).
+const WIRE_SCHEMA_VERSION = 2;
 
 const STYLES = `
 :host {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import type { FillRequest } from '@fieldfox/shared';
+import { SCHEMA_VERSION, type FillRequest } from '@fieldfox/shared';
 import { requestFill, FillRequestError } from '../src/client.js';
 
 // The widget imports the FillPlan TYPE only; it never runs zod. requestFill
@@ -8,7 +8,7 @@ import { requestFill, FillRequestError } from '../src/client.js';
 
 function makeRequest(): FillRequest {
   return {
-    schemaVersion: 1,
+    schemaVersion: SCHEMA_VERSION,
     formSchema: { fields: [] },
     contextText: 'hi',
     images: [],
@@ -54,7 +54,7 @@ test('POSTs JSON to the endpoint with the correct content-type', async () => {
   expect(init.method).toBe('POST');
   expect(init.headers['content-type']).toMatch(/application\/json/);
   const sent = JSON.parse(init.body);
-  expect(sent.schemaVersion).toBe(1);
+  expect(sent.schemaVersion).toBe(SCHEMA_VERSION);
 });
 
 test('sends the site-key header only when a key is configured', async () => {

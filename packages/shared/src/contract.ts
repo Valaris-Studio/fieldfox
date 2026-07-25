@@ -6,9 +6,15 @@ import { z } from 'zod';
 
 // Bump on any breaking change to the shapes below. The server rejects requests
 // whose schemaVersion it cannot serve (PLAN §0, card D2).
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const MAX_HINT = 500;
+
+// Form-level embedder inputs (PLAN §0 "Form-level embedder inputs"). `formContext`
+// is trusted free text about this specific form (site-owner tier); `formId` is an
+// opaque token the server may map to per-form policies.
+const MAX_FORM_CONTEXT = 2000;
+const MAX_FORM_ID = 128;
 
 // Per-field author annotations parsed from data-ff-* attributes (RESEARCH §5).
 // These are site-owner-TRUSTED input; they ride a prompt lane separate from
@@ -81,6 +87,8 @@ export const FillRequest = z.object({
   contextText: z.string(),
   images: z.array(RequestImage).default([]),
   locale: z.string().optional(),
+  formContext: z.string().max(MAX_FORM_CONTEXT).optional(),
+  formId: z.string().max(MAX_FORM_ID).optional(),
 });
 export type FillRequest = z.infer<typeof FillRequest>;
 

@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import type { FillPlan, FillRequest } from '@fieldfox/shared';
+import { SCHEMA_VERSION, type FillPlan, type FillRequest } from '@fieldfox/shared';
 import { createApp } from '../src/app.js';
 import { resolveConfig } from '../src/config.js';
 import { InMemoryStore } from '../src/store.js';
@@ -23,7 +23,7 @@ function testApp(llmCaller?: ChatCompletion) {
 
 function validRequest(): FillRequest {
   return {
-    schemaVersion: 1,
+    schemaVersion: SCHEMA_VERSION,
     contextText: 'Name is Grace Hopper, country United States.',
     images: [],
     formSchema: {
