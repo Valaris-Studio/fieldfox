@@ -207,3 +207,31 @@ test('over-cap context and form-id are truncated to the shared maxima', async ()
   expect((body.formContext as string).length).toBe(2000);
   expect((body.formId as string).length).toBe(128);
 });
+
+test('fill runs end to end on a form-less target container (pilot finding 1)', async () => {
+  document.body.innerHTML = `
+    <div id="card" class="w-full max-w-md"><input id="org" name="org" /></div>
+    <field-fox target="#card"></field-fox>`;
+  const el = document.querySelector('field-fox') as FieldFoxElement;
+  const org = document.getElementById('org') as HTMLInputElement;
+
+  fetchSpy.mockImplementation(async (_url, init) => {
+    const body = JSON.parse((init as RequestInit).body as string);
+    const fieldId = body.formSchema.fields[0].id as string;
+    return jsonResponse({ fills: [{ fieldId, action: 'set', value: 'Grupo Andino' }] });
+  });
+
+  // The popover dispatches on the anchor; for a form-less target that is the
+  // container itself, which is where the element bound its listener.
+  el.anchorElement.dispatchEvent(
+    new CustomEvent('fieldfox:fill', {
+      detail: { contextText: 'org is Grupo Andino', images: [] },
+      bubbles: true,
+      composed: true,
+    }),
+  );
+  await flush();
+
+  expect(fetchSpy).toHaveBeenCalledOnce();
+  expect(org.value).toBe('Grupo Andino');
+});

@@ -53,6 +53,24 @@ test('target-mode: a container selector resolves to its first descendant form', 
   expect(el.forms[0]).toBe(document.querySelector('#panel form'));
 });
 
+test('target-mode: a form-less container becomes the introspection root and trigger anchor', () => {
+  // shadcn/React cards render inputs with NO <form>. The resolved container —
+  // not the empty widget host — must be walked and anchored to (pilot finding 1).
+  document.body.innerHTML = `
+    <div id="card" class="w-full max-w-md">
+      <input name="org" />
+      <input name="email" type="email" />
+    </div>
+    <field-fox target="#card"></field-fox>
+  `;
+  const el = document.querySelector('field-fox') as FieldFoxElement;
+  const card = document.getElementById('card')!;
+
+  expect(el.forms).toHaveLength(0); // no form to discover…
+  expect(el.anchorElement).toBe(card); // …but the anchor is the container, not `el`
+  expect(el.introspect().schema.fields.map((f) => f.name)).toEqual(['org', 'email']);
+});
+
 test('wrapping-mode discovers descendant forms', () => {
   document.body.innerHTML = `
     <field-fox>

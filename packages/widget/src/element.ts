@@ -80,6 +80,11 @@ export class FieldFoxElement extends HTMLElement {
   // Not named `popover` — HTMLElement already reflects a `popover` string attr.
   private popoverPanel: PopoverHandle | null = null;
   readonly forms: HTMLFormElement[] = [];
+  // A `target` that resolves to a container with NO <form> (common on shadcn/
+  // React cards): that container is the introspection root and trigger anchor,
+  // so a form-less page still fills instead of walking the empty widget host
+  // (pilot finding 1). Null in wrapping-mode or when a form was found.
+  private formlessRoot: HTMLElement | null = null;
 
   // In-flight fill: the AbortController cancels the network call and the restore
   // fn reverts the disable/shimmer effect. Both are cleared when the fill settles.
@@ -114,6 +119,7 @@ export class FieldFoxElement extends HTMLElement {
     this.popoverPanel?.destroy();
     this.popoverPanel = null;
     this.forms.length = 0;
+    this.formlessRoot = null;
   }
 
   attributeChangedCallback(name: string): void {
@@ -126,11 +132,17 @@ export class FieldFoxElement extends HTMLElement {
     }
   }
 
-  // The element whose top-right corner the trigger anchors to: the resolved
-  // target form in target-mode, else the first discovered form, else the
+  // The element whose top-right corner the trigger anchors to: the first
+  // discovered form, else a resolved form-less target container, else the
   // element itself (so the trigger is still placed and testable).
   private get anchor(): HTMLElement {
-    return this.forms[0] ?? this;
+    return this.forms[0] ?? this.formlessRoot ?? this;
+  }
+
+  // The resolved anchor, exposed read-only for embedders and tests (mirrors the
+  // public `forms` / `panel` getters). Reference identity, not pixel geometry.
+  get anchorElement(): HTMLElement {
+    return this.anchor;
   }
 
   private mount(): void {
@@ -155,6 +167,7 @@ export class FieldFoxElement extends HTMLElement {
 
   private discoverForms(): void {
     this.forms.length = 0;
+    this.formlessRoot = null;
     const targetSelector = this.getAttribute('target');
     if (targetSelector) {
       // target-mode: resolve against the document; accept a form or the first
@@ -165,6 +178,9 @@ export class FieldFoxElement extends HTMLElement {
           ? resolved
           : (resolved?.querySelector('form') ?? null);
       if (form) this.forms.push(form);
+      // No <form>, but the target itself exists: introspect and anchor to it
+      // (form-less shadcn/React cards) instead of the empty widget host.
+      else if (resolved instanceof HTMLElement) this.formlessRoot = resolved;
       return;
     }
     // wrapping-mode: descendant forms in the light DOM. The host form is never
@@ -172,12 +188,14 @@ export class FieldFoxElement extends HTMLElement {
     this.forms.push(...this.querySelectorAll('form'));
   }
 
-  // Introspects the discovered form(s) into a FormSchema plus an id→element
-  // resolver (card C2). Falls back to the host element itself when no form was
-  // discovered so form-less containers are still walked. C3/C4 call this to
-  // build the fill request and later map FillPlan entries back to live elements.
+  // Introspects the discovered root(s) into a FormSchema plus an id→element
+  // resolver (card C2): the discovered form(s), else a resolved form-less target
+  // container, else the host element itself (wrapping-mode with no form). C3/C4
+  // call this to build the fill request and map FillPlan entries back to live
+  // elements.
   introspect(): IntrospectionResult {
-    const roots = this.forms.length > 0 ? this.forms : [this];
+    const roots: Element[] =
+      this.forms.length > 0 ? this.forms : [this.formlessRoot ?? this];
     return introspectForms(roots);
   }
 

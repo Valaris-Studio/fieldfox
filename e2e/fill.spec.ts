@@ -7,6 +7,7 @@ import { CANNED, FORCE_ERROR, SKIP_AND_OMIT } from './canned.mjs';
 // The example forms' selectors are the contract — fixtures are never modified.
 
 const PLAIN_URL = 'http://localhost:8080/examples/plain-html/';
+const FORMLESS_URL = 'http://localhost:8080/examples/plain-html/formless.html';
 const REACT_URL = 'http://localhost:5173/';
 const MOCK_URL = 'http://127.0.0.1:8793/__mock/requests';
 
@@ -265,4 +266,27 @@ test('form-level embedder inputs: context / form-id attributes ride the POSTed F
 
   // The whole flow still completes on top of the new fields.
   await expect(ui(page).status).toContainText('Review, then submit', { timeout: 15_000 });
+});
+
+test('form-less container: introspects + fills, trigger anchors to the container (pilot finding 1)', async ({ page }) => {
+  // Vario /signup regression: a shadcn card with inputs but NO <form>. Before
+  // the fix the trigger anchored to the empty widget host (x=-22,y=994) and fill
+  // reported "No fields to fill." Now the resolved container is the root+anchor.
+  await page.goto(FORMLESS_URL);
+
+  const { trigger, status } = ui(page);
+  await expect(trigger).toBeVisible();
+
+  // Anchored at the CONTAINER's top-right corner, not the host's flow position.
+  const cardBox = (await page.locator('#signup-card').boundingBox())!;
+  const trigBox = (await trigger.boundingBox())!;
+  expect(Math.abs(trigBox.x + trigBox.width - (cardBox.x + cardBox.width))).toBeLessThan(40);
+  expect(Math.abs(trigBox.y - cardBox.y)).toBeLessThan(40);
+
+  await openPanelAndFill(page, 'Org is Grupo Andino Logística, email operaciones@grupoandino.cl.');
+
+  await expect(status).toContainText('Review, then submit', { timeout: 15_000 });
+  // The container's fields were introspected and filled — no "No fields to fill."
+  await expect(page.locator('#work-email')).toHaveValue(CANNED.email);
+  await expect(status).not.toContainText('No fields to fill');
 });

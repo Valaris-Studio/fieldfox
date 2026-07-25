@@ -1,0 +1,46 @@
+<!doctype html>
+<!--
+  fieldfox embed against a FORM-LESS container. Many shadcn/React pages render
+  inputs inside a card <div> with no <form> (pilot finding 1). The embed points
+  `target` at that container; fieldfox introspects and anchors to it directly.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Andes Cloud — API access request (form-less)</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 32rem; padding: 0 1rem; }
+      .card { display: grid; gap: 0.5rem; border: 1px solid #ccc; border-radius: 8px; padding: 1rem; }
+      label { font-weight: 600; margin-top: 0.5rem; }
+      input { font: inherit; padding: 0.4rem; }
+      button { margin-top: 1rem; padding: 0.5rem; font: inherit; }
+      .muted { color: #666; font-size: 0.875rem; margin: 0; }
+    </style>
+  </head>
+  <body>
+    <h1>Andes Cloud — request API access</h1>
+    <p class="muted">
+      This card has inputs but no &lt;form&gt; element (as shadcn cards often do).
+      Click the fieldfox button at its top-right corner and paste your details.
+    </p>
+
+    <!-- No <form>: just a labelled card of inputs, like a shadcn card. -->
+    <div id="signup-card" class="card w-full max-w-md">
+      <label for="org-name">Organization name</label>
+      <input id="org-name" name="org-name" type="text" autocomplete="organization" />
+
+      <label for="work-email">Work email</label>
+      <input id="work-email" name="work-email" type="email" autocomplete="email" />
+
+      <button type="button">Request access</button>
+    </div>
+
+    <script src="../../packages/widget/dist/fieldfox.js"></script>
+    <field-fox
+      target="#signup-card"
+      endpoint="http://localhost:8787/api/fill"
+      site-key="ffx_pk_dev0000000000000000000000000000"
+    ></field-fox>
+  </body>
+</html>
