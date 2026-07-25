@@ -43,9 +43,9 @@ const DIM_CLASS = 'ff-fill-dim';
 // GLOW_BAND_PX is a wider mask band than the crisp ring so the blurred glow reads
 // as a soft halo hugging the perimeter — never a wedge sweeping the form interior.
 const RING_RADIUS_PX = 12;
-const RING_BAND_PX = 3;
-const GLOW_BAND_PX = RING_BAND_PX * 5;
-const GLOW_BLUR_PX = 10;
+const RING_BAND_PX = 2;
+const GLOW_BAND_PX = RING_BAND_PX * 3;
+const GLOW_BLUR_PX = 6;
 
 // The dim is injected into document.head for the SAME reason the shimmer was:
 // the affected fields live in the HOST's LIGHT DOM, which a shadow-root
@@ -244,9 +244,9 @@ const TRACER_CSS = `
     from 0deg,
     rgba(226, 98, 44, 0) 0deg,
     rgba(226, 98, 44, 0) 210deg,
-    rgba(226, 98, 44, 0.15) 250deg,
-    rgba(232, 106, 52, 0.55) 310deg,
-    rgba(255, 138, 66, 0.95) 345deg,
+    rgba(226, 98, 44, 0.1) 250deg,
+    rgba(232, 106, 52, 0.4) 310deg,
+    rgba(255, 138, 66, 0.85) 345deg,
     rgba(255, 178, 122, 1) 357deg,
     rgba(226, 98, 44, 0) 360deg
   );
@@ -254,7 +254,7 @@ const TRACER_CSS = `
 }
 .ff-tracer-glow::before {
   filter: blur(${GLOW_BLUR_PX}px);
-  opacity: 0.7;
+  opacity: 0.5;
 }
 
 @keyframes ff-tracer-spin {
@@ -267,7 +267,7 @@ const TRACER_CSS = `
      interior, no motion. Still reads as "working". */
   .ff-tracer-ring::before,
   .ff-tracer-glow::before { display: none; }
-  .ff-tracer-ring { background: rgba(226, 98, 44, 0.45); }
-  .ff-tracer-glow { background: rgba(226, 98, 44, 0.18); }
+  .ff-tracer-ring { background: rgba(226, 98, 44, 0.22); }
+  .ff-tracer-glow { background: rgba(226, 98, 44, 0.09); }
 }
 `;

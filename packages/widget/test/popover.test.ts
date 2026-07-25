@@ -246,6 +246,131 @@ test('re-opening a closed panel starts expanded', () => {
   expect(handle.isMinimized()).toBe(false);
 });
 
+// --- Minimal close button (item 2) ------------------------------------------
+// A chromeless × in the header top-right closes the panel via the same path as
+// Esc (doClose), and it is not present in the minimized strip state.
+
+test('the header close button closes the panel', () => {
+  const { handle, root, trigger } = harness!;
+  handle.open();
+  expect(handle.isOpen()).toBe(true);
+
+  const close = root.querySelector('[part="close-button"]') as HTMLButtonElement;
+  expect(close).not.toBeNull();
+  expect(close.getAttribute('aria-label')).toBe('Close');
+  close.click();
+
+  expect(handle.isOpen()).toBe(false);
+  // Same teardown path as Esc: focus returns to the trigger.
+  expect(document.activeElement).toBe(trigger);
+});
+
+test('the close button is hidden (display:none) in the minimized strip state', () => {
+  const { handle, root } = harness!;
+  handle.open();
+  handle.showStatus('Filled 2 fields.'); // minimizes
+  const close = root.querySelector('[part="close-button"]') as HTMLElement;
+  // The strip must not carry the close affordance (CSS hides it; the class is the
+  // observable proxy under jsdom, which has no computed layout).
+  const panel = root.querySelector('[part="panel"]') as HTMLElement;
+  expect(panel.classList.contains('ff-minimized')).toBe(true);
+  expect(close).not.toBeNull();
+});
+
+// --- Hidden-during-flight (item 3) ------------------------------------------
+// On Fill the panel disappears entirely (ff-hidden) for the flight; the C4 flow
+// keeps its handle. The success settle (showStatus) reveals it as the minimized
+// strip; the error settle (showError) reveals it expanded. Hidden ≠ closed.
+
+test('pressing Fill hides the panel entirely while keeping it open (in-flight)', () => {
+  const { handle, root } = harness!;
+  handle.open();
+
+  const panel = root.querySelector('[part="panel"]') as HTMLElement;
+  const fill = root.querySelector('[part="fill-button"]') as HTMLButtonElement;
+  fill.click();
+
+  expect(handle.isHidden()).toBe(true);
+  expect(panel.classList.contains('ff-hidden')).toBe(true);
+  // Hidden is NOT closed — the flow still drives the same open panel.
+  expect(handle.isOpen()).toBe(true);
+  // Busy suspends the focus trap so hiding doesn't yank focus back in.
+  expect(handle.isBusy()).toBe(true);
+  expect(handle.isTrapActive()).toBe(false);
+});
+
+test('a success settle reveals the hidden panel directly as the minimized strip', () => {
+  const { handle, root } = harness!;
+  handle.open();
+  const panel = root.querySelector('[part="panel"]') as HTMLElement;
+  (root.querySelector('[part="fill-button"]') as HTMLButtonElement).click();
+  expect(handle.isHidden()).toBe(true);
+
+  handle.showStatus('Filled 3 fields, left 1.');
+
+  expect(handle.isHidden()).toBe(false);
+  expect(panel.classList.contains('ff-hidden')).toBe(false);
+  expect(handle.isMinimized()).toBe(true); // reappears in the status-strip state
+  const status = root.querySelector('[role="status"]') as HTMLElement;
+  expect(status.textContent).toContain('Filled 3 fields, left 1.');
+});
+
+test('an error settle reveals the hidden panel expanded and focuses it', () => {
+  const { handle, root } = harness!;
+  handle.open();
+  const panel = root.querySelector('[part="panel"]') as HTMLElement;
+  (root.querySelector('[part="fill-button"]') as HTMLButtonElement).click();
+  expect(handle.isHidden()).toBe(true);
+
+  handle.showError('Could not fill the form. Please try again.');
+
+  expect(handle.isHidden()).toBe(false);
+  expect(panel.classList.contains('ff-hidden')).toBe(false);
+  expect(handle.isMinimized()).toBe(false); // full panel for retry
+  // The error state pulls focus back into the panel (it was released while hidden).
+  expect(root.activeElement).toBe(panel);
+});
+
+test('while hidden, Escape falls through to the host (fieldfox does not own it)', () => {
+  const { handle, root } = harness!;
+  const hostEscape = vi.fn();
+  document.addEventListener('keydown', hostEscape);
+  try {
+    handle.open();
+    (root.querySelector('[part="fill-button"]') as HTMLButtonElement).click();
+    expect(handle.isHidden()).toBe(true);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    );
+
+    // Hidden ⇒ fieldfox is not showing UI ⇒ it must not own Escape: the panel
+    // stays open (hidden) and the host handler runs.
+    expect(handle.isOpen()).toBe(true);
+    expect(handle.isHidden()).toBe(true);
+    expect(hostEscape).toHaveBeenCalledTimes(1);
+  } finally {
+    document.removeEventListener('keydown', hostEscape);
+  }
+});
+
+test('a close while hidden fully closes (no leaked hidden-but-open panel)', () => {
+  const { handle } = harness!;
+  handle.open();
+  (harness!.root.querySelector('[part="fill-button"]') as HTMLButtonElement).click();
+  expect(handle.isHidden()).toBe(true);
+
+  handle.close();
+  expect(handle.isOpen()).toBe(false);
+  expect(handle.isHidden()).toBe(false);
+
+  // Re-opening is a clean, visible panel — not stuck invisible.
+  handle.open();
+  expect(handle.isHidden()).toBe(false);
+  const panel = harness!.root.querySelector('[part="panel"]') as HTMLElement;
+  expect(panel.classList.contains('ff-hidden')).toBe(false);
+});
+
 test('pasting an image adds a thumbnail; the × button removes it', async () => {
   const { handle, root } = harness!;
   handle.open();

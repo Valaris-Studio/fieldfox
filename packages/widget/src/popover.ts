@@ -68,85 +68,113 @@ export interface PopoverHandle {
   // Busy = the C4 `applying` phase: inputs disabled, focus trap suspended.
   setBusy(busy: boolean): void;
   isBusy(): boolean;
+  // The error settle: reveals the panel (hidden for the flight) EXPANDED and
+  // focuses it so the user can read the message and retry.
   showError(message: string): void;
   // Non-error informational status — the C4 fill report ("Filled 3, left 1").
-  // A success report is the panel's "done" state, so it also minimizes the panel
-  // so the just-filled fields are visible for review (pilot-finding 5).
+  // The success settle: reveals the panel (hidden for the flight) directly as the
+  // minimized status strip so the just-filled fields are visible for review
+  // (pilot-finding 5).
   showStatus(message: string): void;
   // Collapse to a status-only strip / restore the full panel. Minimizing keeps
   // the panel OPEN (the user can re-expand); it is not a close.
   expand(): void;
   isMinimized(): boolean;
+  // Hidden-during-flight: the panel disappears entirely while a fill is on the
+  // wire (item 3), revealed by the success/error settle. Hidden ≠ closed.
+  isHidden(): boolean;
   // Introspection hooks for tests / C4; not part of the day-to-day surface.
   isTrapActive(): boolean;
   destroy(): void;
 }
 
+// Radii are deliberately small (6px panel / 4px controls) so the panel reads as a
+// squared, compact utility surface, not a rounded card; paddings/gaps are tight
+// for the same reason. Font stays at 13–14px for readability.
 const PANEL_STYLES = `
 :host { --fieldfox-z-index: 2147483647; }
 .ff-panel {
   box-sizing: border-box;
-  width: min(360px, 90vw);
+  width: min(320px, 90vw);
   max-height: 80vh;
   overflow: auto;
-  padding: 14px;
+  padding: 10px;
   margin: 0;
   border: 1px solid rgba(0,0,0,0.12);
-  border-radius: 10px;
+  border-radius: 6px;
   background: #fff;
   color: #1a1a1a;
   box-shadow: 0 8px 30px rgba(0,0,0,0.18);
-  font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
 }
 .ff-panel[popover] { inset: unset; }
-/* The title doubles as the drag handle (RESEARCH: no separate chrome — the panel
-   is intentionally minimal). grab/grabbing signal draggability; user-select:none
-   stops the pointerdown from starting a text selection mid-drag. touch-action:none
-   lets pointermove fire on touch without the browser claiming the gesture to scroll. */
+/* Header row: the title doubles as the drag handle (RESEARCH: no separate chrome
+   — the panel is intentionally minimal) and the minimal × close button sits at
+   its right. grab/grabbing signal draggability; user-select:none stops the
+   pointerdown from starting a text selection mid-drag. touch-action:none lets
+   pointermove fire on touch without the browser claiming the gesture to scroll.
+   The header pointerdown drag-guard ignores drags that begin on a button, so the
+   close button and the drag handle coexist in one row. */
+.ff-header {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 0 0 6px;
+}
 .ff-title {
-  margin: 0 0 8px; font-size: 15px; font-weight: 600;
+  flex: 1; margin: 0; font-size: 14px; font-weight: 600;
   cursor: grab; user-select: none; touch-action: none;
 }
 .ff-panel.ff-dragging .ff-title { cursor: grabbing; }
 /* A minimized strip is click-to-expand, so its header is not a drag handle. */
 .ff-panel.ff-minimized .ff-title { cursor: pointer; }
+/* Minimal chromeless close: no background/border, just the glyph with a subtle
+   hover. Aligned to the header top-right, hidden in the minimized strip state. */
+.ff-close {
+  flex: none; align-self: flex-start;
+  width: 18px; height: 18px; line-height: 16px;
+  padding: 0; margin: 0; border: 0;
+  background: transparent; color: rgba(0,0,0,0.45);
+  cursor: pointer; font-size: 16px;
+  border-radius: 4px;
+}
+.ff-close:hover { color: rgba(0,0,0,0.75); background: rgba(0,0,0,0.05); }
+.ff-panel.ff-minimized .ff-close { display: none; }
 .ff-textarea {
   box-sizing: border-box;
   width: 100%;
-  min-height: 84px;
+  min-height: 72px;
   resize: vertical;
-  padding: 8px;
+  padding: 6px;
   border: 1px solid rgba(0,0,0,0.2);
-  border-radius: 6px;
+  border-radius: 4px;
   font: inherit;
 }
 .ff-drop {
-  margin-top: 8px;
-  padding: 10px;
+  margin-top: 6px;
+  padding: 8px;
   border: 1px dashed rgba(0,0,0,0.3);
-  border-radius: 6px;
+  border-radius: 4px;
   text-align: center;
   color: #555;
 }
 .ff-drop.ff-dragover { border-color: var(--fieldfox-accent, #e2622c); background: rgba(226,98,44,0.06); }
 .ff-file-label { cursor: pointer; text-decoration: underline; }
 .ff-file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.ff-thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.ff-thumb { position: relative; width: 56px; height: 56px; border-radius: 6px; overflow: hidden; border: 1px solid rgba(0,0,0,0.15); }
+.ff-thumbs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.ff-thumb { position: relative; width: 48px; height: 48px; border-radius: 4px; overflow: hidden; border: 1px solid rgba(0,0,0,0.15); }
 .ff-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ff-thumb-remove {
   position: absolute; top: 0; right: 0;
   width: 18px; height: 18px; line-height: 16px;
-  padding: 0; border: 0; border-radius: 0 0 0 6px;
+  padding: 0; border: 0; border-radius: 0 0 0 4px;
   background: rgba(0,0,0,0.6); color: #fff; cursor: pointer; font-size: 13px;
 }
 /* Document attachment chips — filename + remove control, mirroring the image
    thumbs' interaction but laid out as text rows since a PDF/text file has no
    preview image. */
-.ff-chips { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.ff-chips { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .ff-chip {
   display: flex; align-items: center; gap: 6px;
-  padding: 4px 6px; border: 1px solid rgba(0,0,0,0.15); border-radius: 6px;
+  padding: 3px 5px; border: 1px solid rgba(0,0,0,0.15); border-radius: 4px;
   font-size: 12px; background: rgba(0,0,0,0.03);
 }
 .ff-chip-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -156,7 +184,7 @@ const PANEL_STYLES = `
   background: rgba(0,0,0,0.6); color: #fff; cursor: pointer; font-size: 13px;
 }
 .ff-panel.ff-minimized .ff-chips { display: none; }
-.ff-status { margin-top: 8px; min-height: 1em; font-size: 13px; }
+.ff-status { margin-top: 6px; min-height: 1em; font-size: 13px; }
 .ff-status.ff-error { color: #b3261e; }
 /* Done state: collapse to a title + status strip so the filled fields behind the
    panel are visible for review (pilot-finding 5). Click anywhere on the strip to
@@ -168,10 +196,14 @@ const PANEL_STYLES = `
 .ff-panel.ff-minimized .ff-chips,
 .ff-panel.ff-minimized .ff-actions { display: none; }
 .ff-panel.ff-minimized .ff-status { margin-top: 4px; }
-.ff-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+/* Hidden-during-flight state: the panel disappears entirely while the fill is on
+   the wire (the border-tracer on the form communicates progress). It is hidden,
+   not closed — the fill flow keeps driving it, and success/error reveal it again. */
+.ff-panel.ff-hidden { display: none; }
+.ff-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .ff-fill {
-  padding: 8px 14px;
-  border: 0; border-radius: 6px;
+  padding: 6px 12px;
+  border: 0; border-radius: 4px;
   background: var(--fieldfox-accent, #e2622c); color: #fff;
   font: inherit; font-weight: 600; cursor: pointer;
 }
@@ -200,11 +232,30 @@ export function createPopover(
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', 'Fill this form with Fieldfox');
   panel.setAttribute('popover', 'manual'); // no-op attribute where the API is absent
+  // Programmatically focusable (not in the tab order) so the error-settle reveal
+  // can move focus back into the panel; tabIndex -1 is excluded from the focus
+  // trap's focusables(), so it never becomes a Tab stop.
+  panel.tabIndex = -1;
+
+  // Header row: the drag handle (part="panel-header") holding the title and the
+  // minimal close button. The row is the handle so both children ride along and
+  // the drag-guard can ignore a pointerdown that begins on the close button.
+  const header = document.createElement('div');
+  header.className = 'ff-header';
+  header.setAttribute('part', 'panel-header');
 
   const title = document.createElement('p');
   title.className = 'ff-title';
-  title.setAttribute('part', 'panel-header');
   title.textContent = 'Describe what to fill';
+
+  const closeButton = document.createElement('button');
+  closeButton.type = 'button';
+  closeButton.className = 'ff-close';
+  closeButton.setAttribute('part', 'close-button');
+  closeButton.setAttribute('aria-label', 'Close');
+  closeButton.textContent = '×';
+
+  header.append(title, closeButton);
 
   const textarea = document.createElement('textarea');
   textarea.className = 'ff-textarea';
@@ -252,8 +303,10 @@ export function createPopover(
   fillButton.textContent = 'Fill form';
   actions.append(fillButton);
 
-  panel.append(title, textarea, drop, thumbs, chips, status, actions);
+  panel.append(header, textarea, drop, thumbs, chips, status, actions);
   shadowRoot.appendChild(panel);
+
+  closeButton.addEventListener('click', () => doClose());
 
   const images: PanelImage[] = [];
   // PDF attachments (wire) and text attachments (inlined into contextText). Kept
@@ -263,6 +316,14 @@ export function createPopover(
   let open = false;
   let busy = false;
   let minimized = false;
+  // Hidden-during-flight (item 3 / pilot UX): on Fill the panel disappears
+  // entirely for the duration of the request — the border-tracer on the form is
+  // the sole progress signal. Hidden is NOT closed: `open` stays true and the C4
+  // flow keeps driving the panel; the success/error settle reveals it again
+  // (success → minimized strip, error → expanded). Closing while hidden fully
+  // closes (doClose clears it), so an aborted/superseded fill never leaks a
+  // hidden-but-open panel.
+  let hidden = false;
   // Once the user drags, THEIR position wins for the rest of this open session:
   // auto-positioning (positionNearHost, expand-restore) must not override it.
   // Stored in fixed/viewport coords; reset on close so the next open re-anchors.
@@ -333,16 +394,22 @@ export function createPopover(
   }
 
   // --- Dragging (header as handle) --------------------------------------------
-  // The title is the drag handle. A drag records draggedPos so the user's chosen
-  // spot survives reflow, minimize/expand, and window resize for this session.
+  // The header row is the drag handle. A drag records draggedPos so the user's
+  // chosen spot survives reflow, minimize/expand, and window resize for this
+  // session.
   let dragGrab: Point | null = null; // pointer→panel-corner offset, so the corner tracks the cursor
 
   function onHandlePointerDown(event: PointerEvent): void {
     // Left button / primary pointer only; a minimized strip is click-to-expand,
-    // not draggable; drags that begin on an interactive control (a future close
+    // not draggable; drags that begin on an interactive control (the close
     // button, a link) belong to that control, not the drag.
     if (event.button !== 0 || minimized) return;
-    if ((event.target as Element | null)?.closest('button, a, input, textarea, select, [tabindex]')) {
+    // Skip drags that begin on an interactive control (the close button, a link).
+    // tabindex="-1" is NOT interactive — the panel itself carries it (for the
+    // error-reveal focus), so exclude it or every header pointerdown would match.
+    if ((event.target as Element | null)?.closest(
+      'button, a, input, textarea, select, [tabindex]:not([tabindex="-1"])',
+    )) {
       return;
     }
     const panelRect = panel.getBoundingClientRect();
@@ -354,14 +421,14 @@ export function createPopover(
     // handle even when the cursor outruns the panel.
     event.preventDefault();
     try {
-      title.setPointerCapture(event.pointerId);
+      header.setPointerCapture(event.pointerId);
     } catch {
       // jsdom/older engines may lack pointer capture; document listeners below
       // still deliver the move/up sequence.
     }
-    title.addEventListener('pointermove', onHandlePointerMove);
-    title.addEventListener('pointerup', onHandlePointerUp);
-    title.addEventListener('pointercancel', onHandlePointerUp);
+    header.addEventListener('pointermove', onHandlePointerMove);
+    header.addEventListener('pointerup', onHandlePointerUp);
+    header.addEventListener('pointercancel', onHandlePointerUp);
   }
 
   function onHandlePointerMove(event: PointerEvent): void {
@@ -384,15 +451,15 @@ export function createPopover(
     dragPointerId = null;
     panel.classList.remove('ff-dragging');
     try {
-      title.releasePointerCapture(event.pointerId);
+      header.releasePointerCapture(event.pointerId);
     } catch {
       /* capture may not have been taken; nothing to release */
     }
-    title.removeEventListener('pointermove', onHandlePointerMove);
-    title.removeEventListener('pointerup', onHandlePointerUp);
-    title.removeEventListener('pointercancel', onHandlePointerUp);
+    header.removeEventListener('pointermove', onHandlePointerMove);
+    header.removeEventListener('pointerup', onHandlePointerUp);
+    header.removeEventListener('pointercancel', onHandlePointerUp);
   }
-  title.addEventListener('pointerdown', onHandlePointerDown);
+  header.addEventListener('pointerdown', onHandlePointerDown);
 
   // Keep the panel inside the viewport when the window shrinks; re-clamp the
   // dragged spot if there is one, otherwise the current (auto) position. Added
@@ -420,6 +487,7 @@ export function createPopover(
     if (open) return;
     open = true;
     clearStatus();
+    setHidden(false); // a fresh open is always visible (never re-opens into a stale hidden state)
     draggedPos = null; // a fresh open re-anchors to the host; drag state does not persist across opens
     setMinimized(false); // every open starts in the full intake state
     if (usePopoverApi()) {
@@ -442,6 +510,9 @@ export function createPopover(
   function doClose(): void {
     if (!open) return;
     open = false;
+    // A close while hidden (abort/supersede/disconnect during flight) must FULLY
+    // close: drop the hidden class so a later re-open isn't stuck invisible.
+    setHidden(false);
     document.removeEventListener('keydown', captureEscape, true);
     window.removeEventListener('resize', onWindowResize);
     draggedPos = null; // closing resets to default anchoring for the next open
@@ -458,8 +529,11 @@ export function createPopover(
   // listeners like Radix's; preventDefault suppresses the native Popover
   // light-dismiss) and closes ONLY this panel. If the panel is merely minimized,
   // Escape closes it too — one predictable Escape behavior while it is open.
+  // While HIDDEN (mid-flight), fieldfox is NOT showing UI, so it must not own
+  // Escape: let the key fall through to the host untouched rather than swallow it
+  // or close a panel the user can't see.
   function captureEscape(event: KeyboardEvent): void {
-    if (event.key !== 'Escape' || !open) return;
+    if (event.key !== 'Escape' || !open || hidden) return;
     event.stopImmediatePropagation();
     event.stopPropagation();
     event.preventDefault();
@@ -724,6 +798,12 @@ export function createPopover(
   fillButton.addEventListener('click', () => {
     if (busy) return;
     setBusy(true);
+    // The panel disappears for the whole flight (item 3): the border-tracer on
+    // the form carries progress. setBusy already suspended the trap (busy), so
+    // when display:none moves focus off the hidden control the trap won't yank it
+    // back; the success/error settle reveals the panel again (showStatus → strip,
+    // showError → expanded, focused).
+    setHidden(true);
     const detail = {
       // Text attachments are folded into the free-text lane as delimited blocks;
       // they share the untrusted user-content tier with what the user typed.
@@ -767,14 +847,22 @@ export function createPopover(
   function showError(message: string): void {
     status.textContent = message;
     status.classList.add('ff-error');
-    // Errors need the full panel (the user retries), so an error un-minimizes.
+    // The fill settled with an error: reveal the panel (it was hidden for the
+    // flight) BEFORE repositioning so its rect is measurable, then un-minimize —
+    // errors need the full panel to retry. Focus the panel so the error is
+    // announced and a keyboard user lands back inside it.
+    setHidden(false);
     setMinimized(false);
+    panel.focus();
   }
   function showStatus(message: string): void {
     status.textContent = message;
     status.classList.remove('ff-error');
-    // A success report is the done state → collapse so the filled fields behind
-    // the panel are reviewable (pilot-finding 5).
+    // A success report is the done state: reveal the panel (hidden for the flight)
+    // directly into the minimized status strip so the just-filled fields behind it
+    // are reviewable (pilot-finding 5). Revealed before collapse so the strip's
+    // rect is measurable; the strip does not steal focus.
+    setHidden(false);
     setMinimized(true);
   }
   // A non-error, non-collapsing note (e.g. an unsupported-file type). Not an
@@ -790,6 +878,16 @@ export function createPopover(
   function clearStatus(): void {
     status.textContent = '';
     status.classList.remove('ff-error');
+  }
+
+  // Hide/reveal the whole panel for the in-flight window (item 3). Hidden ≠
+  // closed: `open` stays true so the C4 flow keeps its handle. The focus trap is
+  // already released here because setBusy(true) ran first (trapActive = open &&
+  // !busy), so hiding won't yank focus back into an invisible panel; the reveal
+  // paths decide focus (error → panel.focus(), success strip → no steal).
+  function setHidden(next: boolean): void {
+    hidden = next;
+    panel.classList.toggle('ff-hidden', next);
   }
 
   function setBusy(next: boolean): void {
@@ -816,6 +914,7 @@ export function createPopover(
     showStatus,
     expand,
     isMinimized: () => minimized,
+    isHidden: () => hidden,
     isTrapActive: trapActive,
     destroy(): void {
       // Match doClose's teardown even if destroyed while open (avoid leaked

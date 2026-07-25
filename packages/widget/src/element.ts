@@ -49,6 +49,9 @@ const STYLES = `
   --fieldfox-accent: #e2622c;
   --fieldfox-trigger-offset: 6px;
 }
+/* Bare fox glyph, no circular chrome: transparent box (no border/background/
+   shadow) keeps the 28px hit target while the icon reads as a standalone mark.
+   Hover is a subtle opacity/scale nudge rather than a filled pill. */
 .ff-trigger {
   position: fixed;
   z-index: 2147483646;
@@ -58,16 +61,17 @@ const STYLES = `
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid color-mix(in srgb, var(--fieldfox-accent) 60%, transparent);
-  border-radius: 50%;
-  background: #fff;
+  border: 0;
+  background: transparent;
   color: var(--fieldfox-accent);
   cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
   line-height: 0;
+  opacity: 0.85;
+  transition: opacity 120ms ease, transform 120ms ease;
 }
 .ff-trigger:hover {
-  background: color-mix(in srgb, var(--fieldfox-accent) 12%, #fff);
+  opacity: 1;
+  transform: scale(1.08);
 }
 .ff-trigger:focus-visible {
   outline: 2px solid var(--fieldfox-accent);

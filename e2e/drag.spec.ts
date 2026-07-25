@@ -116,10 +116,12 @@ test('the dragged position survives a fill round-trip', async ({ page }) => {
   await dragHeaderBy(page, 100, 70);
   const dragged = (await panel.boundingBox())!;
 
-  // Run the mocked fill (fill.spec.ts conventions). The success report minimizes
-  // the panel (docked), then re-expanding must restore the dragged spot.
+  // Run the mocked fill (fill.spec.ts conventions). With hide-on-fill the panel
+  // disappears for the flight and reappears at settle directly as the minimized
+  // (docked) strip; re-expanding must then restore the dragged spot.
   await contextInput.fill(`I am ${CANNED.fullName} (${CANNED.email}).`);
   await fillButton.click();
+  await expect(panel).toBeHidden(); // hidden while the request is on the wire
   await expect(status).toContainText('Review, then submit', { timeout: 15_000 });
   await expect(panel).toHaveClass(/ff-minimized/);
 
@@ -141,9 +143,11 @@ test('minimize then expand restores the dragged position', async ({ page }) => {
   await dragHeaderBy(page, 140, 110);
   const dragged = (await panel.boundingBox())!;
 
-  // Drive to the minimized (done) state via a mocked fill …
+  // Drive to the minimized (done) state via a mocked fill. Hide-on-fill hides the
+  // panel for the flight; it reappears at settle as the docked strip …
   await contextInput.fill(`I am ${CANNED.fullName} (${CANNED.email}).`);
   await fillButton.click();
+  await expect(panel).toBeHidden(); // hidden while the request is on the wire
   await expect(status).toContainText('Review, then submit', { timeout: 15_000 });
   await expect(panel).toHaveClass(/ff-minimized/);
 
