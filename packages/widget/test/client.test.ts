@@ -82,6 +82,28 @@ test('non-200 → throws a typed FillRequestError carrying the status', async ()
   });
 });
 
+test("non-200 → captures the server's error code from the body onto errorCode", async () => {
+  fetchSpy.mockImplementation(() =>
+    Promise.resolve(
+      jsonResponse({ error: 'no_fillable_fields', message: 'nothing to plan' }, { status: 422 }),
+    ),
+  );
+
+  await expect(requestFill('/api/fill', makeRequest())).rejects.toMatchObject({
+    status: 422,
+    errorCode: 'no_fillable_fields',
+  });
+});
+
+test('non-200 with a non-JSON body → errorCode is undefined, status still carried', async () => {
+  fetchSpy.mockResolvedValue(new Response('<html>502 Bad Gateway</html>', { status: 502 }));
+
+  await expect(requestFill('/api/fill', makeRequest())).rejects.toMatchObject({
+    status: 502,
+    errorCode: undefined,
+  });
+});
+
 test('a body that is not a FillPlan shape → typed error, never a silent bad plan', async () => {
   fetchSpy.mockResolvedValue(jsonResponse({ nope: true }));
   await expect(requestFill('/api/fill', makeRequest())).rejects.toBeInstanceOf(

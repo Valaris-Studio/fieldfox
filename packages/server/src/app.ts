@@ -68,7 +68,7 @@ export function createApp(options: AppOptions = {}): Hono {
   app.use('/api/fill', (c, next) =>
     guardrails({ config: getConfig(), store, logger: options.logger })(c, next),
   );
-  app.post('/api/fill', createFillHandler(options.llmCaller, store));
+  app.post('/api/fill', createFillHandler(options.llmCaller, store, options.logger));
 
   return app;
 }

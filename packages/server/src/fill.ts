@@ -17,6 +17,7 @@ import {
 } from './llm.js';
 import { reconcile } from './guardrails.js';
 import type { RateBudgetStore } from './store.js';
+import { consoleMetaLogger, type MetaLogger } from './log.js';
 
 // The /api/fill handler: zod-validate → prompt+call (injected) → re-validate &
 // clean → respond. The LLM caller is injected so tests run with no network and
@@ -71,11 +72,24 @@ function cleanPlan(model: ModelFillPlan, fields: FormField[]): FillPlan {
   return { fills };
 }
 
+// A field the model can actually plan a value for. `fillable:false` fields
+// (detected custom widgets, readonly) are described to the model but never
+// planned (shared contract §"Introspection"/RESEARCH §2), so a schema with none
+// of them yields an all-skip plan — a paid provider call with no possible output
+// (pilot-finding 2). The empty-array case is the degenerate subset.
+function hasFillableField(fields: FormField[]): boolean {
+  return fields.some((f) => f.fillable);
+}
+
 // `store` is passed through so the handler can reconcile the guardrail's
 // pre-call token estimate with real usage once the LLM answers. When the app is
 // built without guardrails (bare unit paths), the reconcile context vars are
 // absent and reconciliation is skipped.
-export function createFillHandler(injectedCaller?: ChatCompletion, store?: RateBudgetStore) {
+export function createFillHandler(
+  injectedCaller?: ChatCompletion,
+  store?: RateBudgetStore,
+  logger: MetaLogger = consoleMetaLogger,
+) {
   return async (c: Context): Promise<Response> => {
     let body: unknown;
     try {
@@ -89,6 +103,22 @@ export function createFillHandler(injectedCaller?: ChatCompletion, store?: RateB
       return c.json({ error: 'invalid_request', issues: parsed.error.issues }, 400);
     }
     const request = parsed.data;
+
+    // Reject a schema with no fillable field BEFORE spending a provider call
+    // (pilot-finding 2). 422: the request is well-formed but semantically can't
+    // produce a fill plan.
+    if (!hasFillableField(request.formSchema.fields)) {
+      logger({
+        event: 'refused',
+        status: 422,
+        siteKey: c.get('fieldfoxSiteKey'),
+        errorClass: 'no_fillable_fields',
+      });
+      return c.json(
+        { error: 'no_fillable_fields', message: 'formSchema has no fillable field to plan a value for' },
+        422,
+      );
+    }
 
     const caller = resolveCaller(injectedCaller);
     // Per-formId model override, resolved by the guardrail middleware. Undefined

@@ -115,6 +115,27 @@ test('a server error restores the fields, re-enables the panel, and shows an err
   expect(status.textContent).toMatch(/could not|went wrong|try again/i);
 });
 
+test('a 422 no_fillable_fields refusal shows the specific friendly message, not the generic error', async () => {
+  const { el, form, email } = mountForm();
+  fetchSpy.mockResolvedValue(
+    jsonResponse(
+      { error: 'no_fillable_fields', message: 'formSchema has no fillable field to plan a value for' },
+      422,
+    ),
+  );
+
+  fireFill(form);
+  await flush();
+
+  const status = el.shadowRoot!.querySelector('[role="status"]') as HTMLElement;
+  // The specific copy, NOT the generic "Could not fill… try again." surface.
+  expect(status.textContent).toBe('Nothing here can be filled automatically.');
+  expect(status.textContent).not.toMatch(/try again/i);
+  // Same error-path cleanup as any other failure: fields restored, panel usable.
+  expect(email.disabled).toBe(false);
+  expect(el.panel?.isBusy()).toBe(false);
+});
+
 test('the form is not submitted by the flow', async () => {
   const { form } = mountForm();
   const submitSpy = vi.fn();

@@ -15,12 +15,21 @@ export interface RequestFillOptions {
 
 // One typed error for every failure mode (non-200, malformed body, network drop,
 // abort) so the caller has a single catch that maps to the panel's error state.
+// `errorCode` carries the server's machine-readable `error` field (e.g.
+// 'no_fillable_fields', 'schema_version_unsupported') so the caller can pick
+// specific friendly copy for known refusals instead of the generic surface.
 export class FillRequestError extends Error {
   readonly status?: number;
-  constructor(message: string, status?: number, options?: { cause?: unknown }) {
+  readonly errorCode?: string;
+  constructor(
+    message: string,
+    status?: number,
+    options?: { cause?: unknown; errorCode?: string },
+  ) {
     super(message, options);
     this.name = 'FillRequestError';
     this.status = status;
+    this.errorCode = options?.errorCode;
   }
 }
 
@@ -46,9 +55,14 @@ export async function requestFill(
   }
 
   if (!response.ok) {
+    // Structured refuses (426 version skew, 422 no_fillable_fields, 5xx
+    // fill_failed) all carry a machine-readable `error` code; surface it so the
+    // caller can map known codes to specific copy. Body may not be JSON — the
+    // status alone still drives the generic error path.
     throw new FillRequestError(
       `Fill request failed (${response.status}).`,
       response.status,
+      { errorCode: await errorCodeOf(response) },
     );
   }
 
@@ -65,6 +79,18 @@ export async function requestFill(
     throw new FillRequestError('The server returned an unexpected fill plan.', response.status);
   }
   return body;
+}
+
+// Best-effort read of the server's `error` code from a non-200 body. Never
+// throws: a non-JSON error page (proxy 502, HTML) just yields undefined and the
+// caller falls back to the status-driven generic message.
+async function errorCodeOf(response: Response): Promise<string | undefined> {
+  try {
+    const body = (await response.json()) as { error?: unknown };
+    return typeof body.error === 'string' ? body.error : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // Coarse structural guard — NOT full validation (that is the server's zod job).

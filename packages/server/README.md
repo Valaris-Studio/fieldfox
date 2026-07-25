@@ -86,12 +86,15 @@ content).
 | 403 | `origin_not_allowed` | `Origin` not on the key's allowlist |
 | 413 | `too_many_images` / `image_too_large` | image caps exceeded |
 | 415 | `unsupported_image` / `unsupported_image_type` | not a data URL / disallowed mime |
+| 422 | `no_fillable_fields` | `formSchema` has no `fillable` field — refused before any provider call |
 | 426 | `schema_version_unsupported` | request `schemaVersion` major not in the served set (`{1, 2}`) |
 | 429 | `rate_limited` | per-key or per-IP window exceeded |
 | 429 | `daily_budget_exceeded` | per-key daily token budget kill switch tripped |
 
-`Origin` is spoofable by non-browser clients, so the allowlist is
-defense-in-depth on top of the site key — never the primary control.
+The `422 no_fillable_fields` check runs in the fill handler (after auth/guardrails,
+before the provider call); the rest are guardrail-middleware refusals. `Origin`
+is spoofable by non-browser clients, so the allowlist is defense-in-depth on top
+of the site key — never the primary control.
 
 ## Operational-counter store
 

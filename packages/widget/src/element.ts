@@ -287,11 +287,7 @@ export class FieldFoxElement extends HTMLElement {
     } catch (error) {
       if (controller.signal.aborted) return; // a newer request/teardown owns cleanup
       this.settleFill();
-      const message =
-        error instanceof FillRequestError
-          ? 'Could not fill the form. Please try again.'
-          : 'Something went wrong while filling the form.';
-      panel.showError(message);
+      panel.showError(errorMessageFor(error));
     }
   }
 
@@ -323,6 +319,19 @@ export class FieldFoxElement extends HTMLElement {
   get panel(): PopoverHandle | null {
     return this.popoverPanel;
   }
+}
+
+// Maps a caught fill error to user-facing copy. Known server refuse codes get a
+// specific, friendly message; every other FillRequestError falls back to the
+// generic retry surface, and anything non-typed to the catch-all.
+function errorMessageFor(error: unknown): string {
+  if (error instanceof FillRequestError) {
+    if (error.errorCode === 'no_fillable_fields') {
+      return 'Nothing here can be filled automatically.';
+    }
+    return 'Could not fill the form. Please try again.';
+  }
+  return 'Something went wrong while filling the form.';
 }
 
 // A short, human-readable fill summary for the panel status region.
