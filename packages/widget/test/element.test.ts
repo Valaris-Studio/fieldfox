@@ -194,7 +194,59 @@ test('embed attribute names never exist as element properties (React 19 property
   // React 19 sets a JSX attr as a PROPERTY when `name in el`; a getter-only
   // property then throws and unmounts the host app (e2e finding #1).
   const el = document.createElement('field-fox');
-  for (const attr of ['target', 'endpoint', 'site-key', 'context', 'form-id', 'accept-documents']) {
+  for (const attr of ['target', 'endpoint', 'site-key', 'context', 'form-id', 'accept-documents', 'adjust']) {
     expect(attr in el, `'${attr}' must not be an element property`).toBe(false);
   }
+});
+
+test('adjust attribute: the toggle is absent without it and present with it', () => {
+  document.body.innerHTML = `
+    <form id="f"><input name="x" /></form>
+    <field-fox target="#f"></field-fox>`;
+  const el = document.querySelector('field-fox') as FieldFoxElement;
+  expect(el.shadowRoot!.querySelector('[part="adjust-toggle"]')).toBeNull();
+
+  el.remove();
+  el.setAttribute('adjust', '');
+  document.body.appendChild(el);
+  expect(el.shadowRoot!.querySelector('[part="adjust-toggle"]')).not.toBeNull();
+});
+
+test('adjust attribute: toggling it at runtime re-mounts and creates/removes the toggle', () => {
+  document.body.innerHTML = `
+    <form id="f"><input name="x" /></form>
+    <field-fox target="#f"></field-fox>`;
+  const el = document.querySelector('field-fox') as FieldFoxElement;
+  const toggleSel = '[part="adjust-toggle"]';
+  expect(el.shadowRoot!.querySelector(toggleSel)).toBeNull();
+
+  // Setting the attribute on a live element re-binds (attributeChangedCallback).
+  el.setAttribute('adjust', '');
+  expect(el.shadowRoot!.querySelector(toggleSel)).not.toBeNull();
+
+  // Removing it re-binds again without the toggle.
+  el.removeAttribute('adjust');
+  expect(el.shadowRoot!.querySelector(toggleSel)).toBeNull();
+});
+
+test('adjust attribute: "false" leaves the mode off (boolean-ish convention)', () => {
+  document.body.innerHTML = `
+    <form id="f"><input name="x" /></form>
+    <field-fox target="#f" adjust="false"></field-fox>`;
+  const el = document.querySelector('field-fox') as FieldFoxElement;
+  expect(el.shadowRoot!.querySelector('[part="adjust-toggle"]')).toBeNull();
+});
+
+test('adjust mode: entering mounts field badges; disconnecting tears them all down', () => {
+  document.body.innerHTML = `
+    <form id="f"><input id="a" name="a" /><input id="b" name="b" data-ff-ignore /></form>
+    <field-fox target="#f" adjust></field-fox>`;
+  const el = document.querySelector('field-fox') as FieldFoxElement;
+  el.shadowRoot!.querySelector<HTMLElement>('[part="adjust-toggle"]')!.click();
+  expect(el.shadowRoot!.querySelectorAll('[part="adjust-badge"]').length).toBe(2);
+
+  el.remove();
+  // Full teardown on disconnect: no toggle, no badges left in the shadow root.
+  expect(el.shadowRoot!.querySelector('[part="adjust-toggle"]')).toBeNull();
+  expect(el.shadowRoot!.querySelectorAll('[part="adjust-badge"]').length).toBe(0);
 });

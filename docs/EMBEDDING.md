@@ -66,8 +66,9 @@ The host form is only referenced, never relocated.
 | `context` | string | _(none)_ | Whole-form guidance (site-owner trusted). Trimmed; truncated to 2000 chars. Read fresh per request, so changing it needs no remount. |
 | `form-id` | string | _(none)_ | Opaque token the server may map to per-form policies (e.g. a model override). Trimmed; truncated to 128 chars. |
 | `accept-documents` | boolean-ish | off | Present (and not `"false"`) enables PDF + text-file attachments in the panel. Toggling re-creates the panel. |
+| `adjust` | boolean-ish | off | Present (and not `"false"`) enables **adjustment mode** — a dev/integration overlay for inspecting and live-editing each field's `data-ff-*` annotations. See [Adjustment mode](#adjustment-mode). Do not ship it enabled to production pages. |
 
-`accept-documents` follows HTML boolean-attribute convention: a bare `accept-documents` or any value other than `"false"` turns it on; omitting it (or `accept-documents="false"`) leaves it off.
+`accept-documents` and `adjust` follow HTML boolean-attribute convention: a bare `accept-documents` (or `adjust`) or any value other than `"false"` turns it on; omitting it (or `="false"`) leaves it off.
 
 ## Author hints
 
@@ -96,6 +97,20 @@ Annotate individual fields with `data-ff-*` attributes to steer the fill. These 
   <input id="promo-code" name="promo-code" type="text" data-ff-ignore />
 </form>
 ```
+
+## Adjustment mode
+
+Adjustment mode is a **dev/integration affordance** for authoring the `data-ff-*` hints above without hand-editing HTML and re-loading. Enable it with the `adjust` attribute:
+
+```html
+<field-fox target="#signup-form" adjust></field-fox>
+```
+
+A small ✎ toggle appears beside the fox trigger. Turning it on overlays a badge on every field Fieldfox considers — including `data-ff-ignore`d ones, shown greyed with an "ignored" marker — where each badge shows the field's label and which of `hint` / `format` / `example` are set. Click a badge to open a compact editor for that field's three hints plus an "ignore this field" checkbox; **Apply** writes (or removes) the `data-ff-*` attributes on the live element immediately. Because the widget re-introspects the form on every Fill, an applied edit takes effect on the very next fill — so you can tweak a hint and test it in the same session.
+
+A **copy annotations** chip opens a readonly textarea with one paste-ready line per annotated field (a stable selector followed by its `data-ff-*` attributes) and a best-effort **Copy** button, so you can move the annotations you dialed in back into your source.
+
+Adjustment mode is for integration and development only — it should **not** ship enabled to production pages. Omit the `adjust` attribute (or set `adjust="false"`) on production embeds.
 
 ## End-user surface
 

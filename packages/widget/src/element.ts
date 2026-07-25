@@ -5,6 +5,7 @@ import { createPopover, type PopoverHandle } from './popover.js';
 import { requestFill, FillRequestError } from './client.js';
 import { applyFillPlan, type FillReport } from './fill.js';
 import { startInflightEffect } from './effects.js';
+import { createAdjustMode, type AdjustHandle } from './adjust.js';
 
 // <field-fox> — the mount point. It never wraps, moves, or injects children into
 // the host form (RESEARCH §4); its own UI lives entirely in an OPEN shadow root.
@@ -110,7 +111,16 @@ export class FieldFoxElement extends HTMLElement {
     void this.runFill(event as CustomEvent);
   };
 
-  static readonly observedAttributes = ['target', 'endpoint', 'context', 'form-id', 'accept-documents'];
+  // Adjustment mode (attribute: adjust) — the dev/integration affordance for
+  // seeing + live-editing each field's data-ff-* annotations. Null unless the
+  // attribute is on; created alongside the trigger/popover in bindToAnchor.
+  // NOT named `adjust`: a class field is an OWN instance property, so `this.adjust`
+  // would make `'adjust' in el` true and trip React 19's property-vs-attribute
+  // heuristic (see the fillEndpoint / adjustEnabled notes). The field name must
+  // stay disjoint from the `adjust` attribute.
+  private adjustMode: AdjustHandle | null = null;
+
+  static readonly observedAttributes = ['target', 'endpoint', 'context', 'form-id', 'accept-documents', 'adjust'];
 
   constructor() {
     super();
@@ -135,9 +145,17 @@ export class FieldFoxElement extends HTMLElement {
   attributeChangedCallback(name: string): void {
     // `context` / `form-id` are read fresh when a request is built, so a change
     // needs no re-mount. `accept-documents` shapes the popover's intake config,
-    // which is fixed at creation time, so a toggle re-creates it alongside the
-    // mount-shaping attributes.
-    if (name !== 'target' && name !== 'endpoint' && name !== 'accept-documents') return;
+    // which is fixed at creation time; `adjust` gates whether the adjust toggle is
+    // created — both are fixed at bind time, so a toggle re-creates the binding
+    // alongside the mount-shaping attributes.
+    if (
+      name !== 'target' &&
+      name !== 'endpoint' &&
+      name !== 'accept-documents' &&
+      name !== 'adjust'
+    ) {
+      return;
+    }
     if (this.isConnected && this.trigger) {
       this.disconnectedCallback();
       this.mount();
@@ -189,10 +207,17 @@ export class FieldFoxElement extends HTMLElement {
     // us — listen on the anchor directly).
     this.fillListenerTarget = anchor;
     this.fillListenerTarget.addEventListener('fieldfox:fill', this.onFillRequest);
+
+    // Adjust toggle: only mounted when the attribute is on. It re-introspects the
+    // live anchor per open (introspect() reflects the current roots), so applied
+    // edits ride the very next fill with no extra wiring.
+    if (this.adjustEnabled) {
+      this.adjustMode = createAdjustMode(shadow, anchor, () => this.introspectRoots());
+    }
   }
 
-  // Destroys the trigger + popover and detaches the fill listener. Leaves the
-  // target observer and discovery state alone — the caller decides those.
+  // Destroys the trigger + popover + adjust UI and detaches the fill listener.
+  // Leaves the target observer and discovery state alone — the caller decides those.
   private unbindFromAnchor(): void {
     this.fillListenerTarget?.removeEventListener('fieldfox:fill', this.onFillRequest);
     this.fillListenerTarget = null;
@@ -200,6 +225,8 @@ export class FieldFoxElement extends HTMLElement {
     this.trigger = null;
     this.popoverPanel?.destroy();
     this.popoverPanel = null;
+    this.adjustMode?.destroy();
+    this.adjustMode = null;
     this.boundAnchor = null;
   }
 
@@ -265,9 +292,14 @@ export class FieldFoxElement extends HTMLElement {
   // call this to build the fill request and map FillPlan entries back to live
   // elements.
   introspect(): IntrospectionResult {
-    const roots: Element[] =
-      this.forms.length > 0 ? this.forms : [this.formlessRoot ?? this];
-    return introspectForms(roots);
+    return introspectForms(this.introspectRoots());
+  }
+
+  // The current introspection roots: the discovered form(s), else a resolved
+  // form-less container, else the host element itself. Shared by introspect() and
+  // the adjust mode's badge/export walk so both always reflect the live anchor.
+  private introspectRoots(): Element[] {
+    return this.forms.length > 0 ? this.forms : [this.formlessRoot ?? this];
   }
 
   // Opens the input popover (C3). Fill (C4) is driven by the `fieldfox:fill`
@@ -312,6 +344,15 @@ export class FieldFoxElement extends HTMLElement {
     return this.hasAttribute('accept-documents') && this.getAttribute('accept-documents') !== 'false';
   }
 
+  // Adjustment mode gate (attribute: adjust). Same boolean-ish convention as
+  // acceptDocuments. Named disjoint from the `adjust` attribute — a getter named
+  // `adjust` would satisfy React 19's `'adjust' in el` and be assigned as a
+  // (getter-only, throwing) property, unmounting the host tree; the disjoint name
+  // keeps `'adjust' in el` false so React falls through to setAttribute.
+  private get adjustEnabled(): boolean {
+    return this.hasAttribute('adjust') && this.getAttribute('adjust') !== 'false';
+  }
+
   // The full fill lifecycle (PLAN §1): introspect → disable affected fields +
   // mount the border-tracer overlay → POST /api/fill → apply the FillPlan
   // (readback-or-revert per field) → restore effects + report. The popover already
@@ -353,6 +394,9 @@ export class FieldFoxElement extends HTMLElement {
 
     const controller = new AbortController();
     this.inflight = controller;
+    // Adjust overlays are noise under the tracer (fields are disabled/dimmed): hide
+    // them for the flight and restore on settle if the mode is still active.
+    this.adjustMode?.hideForFlight();
     // The tracer overlay mounts into the widget's shadow root and tracks the
     // anchor rect; `shadowRoot` is non-null here (set in the constructor). If it
     // were ever absent we'd still get the field-disable safety from a bare
@@ -393,6 +437,9 @@ export class FieldFoxElement extends HTMLElement {
     this.restoreEffect = null;
     this.inflight = null;
     this.popoverPanel?.setBusy(false);
+    // Re-show the adjust overlays hidden for the flight (no-op if the mode is off
+    // or was never hidden; idempotent restore mirrors the effect cleanup).
+    this.adjustMode?.restoreAfterFlight();
   }
 
   // Abort an in-flight fill (supersession or disconnect): cancel the request and

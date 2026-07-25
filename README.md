@@ -5,6 +5,7 @@ Fieldfox is a `<field-fox>` web component that fills any web form from free text
 - **Framework-agnostic custom element** — drop the `<field-fox>` tag onto any HTML/JS/CSS page; it works with React, Vue, plain HTML, and forms inside a native `<dialog>`.
 - **Zero runtime dependencies, ~13KB gzip** — the widget ships as a self-registering IIFE (script tag) or ESM module. Its UI lives entirely in an open shadow root and never wraps, moves, or injects into your form.
 - **Text, image, and document input** — paste an email or a photo of a business card; behind an opt-in flag, attach PDFs and text files.
+- **Adjustment mode for integrators** — an opt-in `adjust` overlay to inspect and live-edit each field's `data-ff-*` annotations, test them against a fill, and copy the result back to source (dev-only; not for production pages).
 - **Safety invariants** — never auto-submits; fills or leaves each field with per-field readback-or-revert; disables affected fields while a request is in flight.
 - **Credentials stay server-side** — the self-hosted [Hono](https://hono.dev) server holds the OpenAI-compatible API key and enforces every guardrail (site keys, origin allowlist, rate limits, per-key daily token budget, image caps). No LLM call ever happens in the browser.
 
@@ -74,6 +75,8 @@ npm consumers import the ESM entry instead (it self-registers the element on imp
 import { registerFieldFox } from '@fieldfox/widget';
 registerFieldFox();
 ```
+
+While integrating, add the `adjust` attribute to open [adjustment mode](docs/EMBEDDING.md#adjustment-mode) — a dev overlay for authoring and testing per-field `data-ff-*` hints — then remove it before shipping to production.
 
 See [docs/EMBEDDING.md](docs/EMBEDDING.md) for the full attribute reference, author hints, styling parts, and framework notes.
 
