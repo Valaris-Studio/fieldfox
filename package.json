@@ -11,9 +11,13 @@
     "test": "pnpm -r test",
     "test:e2e": "playwright test",
     "lint": "pnpm -r --if-present lint",
-    "dev": "node scripts/dev.mjs"
+    "dev": "node scripts/dev.mjs",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release:dry": "pnpm build && pnpm -r --filter @fieldfox/widget --filter @fieldfox/shared publish --dry-run --no-git-checks"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.1",
     "@playwright/test": "^1.61.1"
   }
 }

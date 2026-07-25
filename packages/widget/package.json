@@ -1,22 +1,38 @@
 {
   "name": "@fieldfox/widget",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
   "type": "module",
+  "main": "./dist/fieldfox.mjs",
   "module": "./dist/fieldfox.mjs",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/fieldfox.mjs"
-    }
+    },
+    "./fieldfox.js": "./dist/fieldfox.js",
+    "./package.json": "./package.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Valaris-Studio/fieldfox.git",
+    "directory": "packages/widget"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
-    "build": "vite build && tsc -b",
+    "build": "vite build && tsc -b --force",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@fieldfox/shared": "workspace:*"
+  },
   "devDependencies": {
-    "@fieldfox/shared": "workspace:*",
     "jsdom": "^25",
     "typescript": "^5.9",
     "vite": "^7",
