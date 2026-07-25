@@ -1,6 +1,8 @@
 import { FieldFoxElement, registerFieldFox } from './element.js';
 
-export const WIDGET_VERSION = '0.0.0';
+// Injected from package.json at build time via vite `define` (see vite.config.ts)
+// so the published version and this constant can never skew.
+export const WIDGET_VERSION = __WIDGET_VERSION__;
 
 export { FieldFoxElement, registerFieldFox };
 export { triggerPosition } from './trigger.js';
