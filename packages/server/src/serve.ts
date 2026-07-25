@@ -7,22 +7,9 @@ import { app } from './app.js';
 
 const root = new Hono();
 
-// Browsers preflight the cross-origin POST /api/fill (JSON body + the
-// x-fieldfox-key header). A preflight carries no body or key, so it cannot be
-// authenticated — answer it permissively; the guardrails on the actual POST
-// remain the enforcement point.
-root.options('/api/fill', (c) => {
-  const origin = c.req.header('origin');
-  if (origin) {
-    c.header('access-control-allow-origin', origin);
-    c.header('access-control-allow-methods', 'POST');
-    c.header('access-control-allow-headers', 'content-type, x-fieldfox-key');
-    c.header('access-control-max-age', '600');
-    c.header('vary', 'Origin');
-  }
-  return c.body(null, 204);
-});
-
+// The CORS preflight for POST /api/fill lives on the app itself (see app.ts) so
+// it stays testable and travels with the app in any adapter; the mount below
+// serves it.
 root.route('/', app);
 
 // Config/LLM-env failures surface as structured JSON instead of Hono's default
