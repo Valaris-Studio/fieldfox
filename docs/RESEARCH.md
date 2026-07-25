@@ -126,6 +126,7 @@ Angular) register them.
 | Native-prototype-setter + dispatched `input`/`change` events | **recommended v1** |
 | Full synthetic keyboard simulation (per-key events) | viable, deferred — needed only for masked/formatted inputs; heavier |
 | Framework-specific adapters (React/Vue/Angular value accessors) | viable, deferred — the native-setter path already covers all three |
+| Custom-widget fill drivers (ARIA combobox/listbox, role=checkbox/switch, contenteditable) | viable, deferred — **designed in §9 (v1.1 addendum)**; native-setter cannot reach these, they are `leave` in v1 |
 | `execCommand`-era techniques | dead end — deprecated, inconsistent |
 
 ### Recommended approach (v1)
@@ -668,3 +669,403 @@ Security: OWASP LLM01, MSRC spotlighting, Stripe keys, Sysdig LLMjacking,
 hono-rate-limiter, pino, CaMeL (arXiv 2506.08837), Presidio. Prior art:
 Bitwarden Fill Assist, FormFactory (arXiv 2506.01520), Mozilla Fathom,
 browser-use, Google "Understanding HTML with LLMs" (arXiv 2210.03945).
+
+---
+
+## 9. Custom-widget fill drivers (v1.1 addendum)  🔬 design + research
+
+Extends §2 (fill engine, native setters, readback-or-revert) into the space §2
+explicitly deferred: the non-native widgets that `introspect.ts computeFillable`
+already marks `fillable:false` today — `role=combobox`/`listbox`,
+`role=checkbox`/`switch`, and `contenteditable` (introspect.ts:310-319). The
+pilot quantified the gap (`docs/pilot/REPORT.md` finding 3): on Backplane's
+Create-Card dialog only **3 of 10** fields were fillable — a tiptap description
+editor and six shadcn `role=combobox` Selects (Type/Priority/Status/Column/two
+participant Selects) were correctly left, and the context's *bug / high-priority
+/ to-do* had no fillable home; Vario's `/signup` adds a country Select and a
+radix `role=checkbox` DPA button that can never fill. This is per Locked
+Decision (fill-or-leave), not a bug — but it caps coverage on exactly the
+modern design-system forms fieldfox most wants. This section designs a **driver
+layer** that *raises* coverage without *relaxing* any locked invariant:
+fill-or-leave, readback-or-revert, never-auto-submit, and leave-on-uncertainty
+(PLAN §0) remain code guarantees. A driver that cannot **confirm** its write via
+readback must revert and report `left` — identical to the native path today
+(fill.ts:103-108). This is research + design only; no production code ships from
+this card.
+
+**Scope of the research (verified July 2026).** APG combobox/listbox +
+checkbox/switch contracts; where Radix/shadcn, Headless UI, React Aria/Spectrum,
+MUI, Ark UI deviate; the contenteditable insertion primitive across
+ProseMirror/tiptap, Lexical, Slate; and prior art (Playwright's own
+custom-dropdown handling, password-manager posture). Bitwarden is
+**pattern-study-only** (GPL, PLAN §0) — never copied.
+
+### 9.1 The ARIA combobox/listbox interaction contract
+
+**Verdict: there is one portable driver primitive — `open → find option by
+accessible name → activate it → read back → close` — and it is exactly what
+Playwright itself does for custom dropdowns** (Playwright's `selectOption` is
+documented to work *only* on native `<select>`; every framework dropdown is
+driven by `trigger.click() → wait for options → option.click()`
+[Playwright dropdown handling](https://runebook.dev/en/docs/playwright/api/class-frame/frame-select-option),
+[microsoft/playwright#21749](https://github.com/microsoft/playwright/issues/21749)).
+APG pins the DOM contract a robust driver can rely on:
+
+- The combobox element carries `role=combobox`, `aria-expanded`
+  (`false`↔`true`), `aria-controls` → the listbox id, implicit
+  `aria-haspopup=listbox`, and `aria-activedescendant` → the focused option's id
+  when the popup is open. **DOM focus stays on the combobox**; the "active"
+  option is indicated only by `aria-activedescendant`, not by real focus
+  ([APG Combobox pattern](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/),
+  [APG Listbox pattern](https://www.w3.org/WAI/ARIA/apg/patterns/listbox/),
+  [MDN combobox role](https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/combobox_role)).
+- The listbox has `role=listbox`; each option `role=option`; the chosen option
+  carries `aria-selected="true"`. The **accessible name** of an option is its
+  text content (the value the model must target — never a synthetic index).
+- Open via `Down`/`Alt+Down`/`Enter`/`Space` or a click on the trigger; commit
+  via `Enter` on the active option or a click on it; `Escape` closes without
+  committing (the non-destructive "revert" for an opened-but-uncommitted
+  combobox — see §9.4).
+
+**Where libraries deviate from APG** (the driver must tolerate all of these):
+
+| Library | Deviation the driver must handle |
+|---|---|
+| Radix / shadcn `Select` | Options render in a **portal to `document.body`**, not inside `aria-controls` subtree — the driver must find the listbox by id/portal, not by DOM descent. Radix's `hideOthers` sets `aria-hidden="true"` on body-level siblings while open (incl. the app root that contains the trigger); harmless for a click driver but breaks any "is the trigger visible" assertion mid-open ([shadcn-ui/ui#10074](https://github.com/shadcn-ui/ui/issues/10074), [Radix Select](https://www.radix-ui.com/primitives/docs/components/select)). |
+| Headless UI `Listbox` | Fires `onClick`, **not** `onChange`, and does not bubble a form event — an RHF `Controller` won't see a native `change`; readback must come from the widget's own committed state (`aria-selected`/trigger text), not a dispatched `change` ([headlessui#2150](https://github.com/tailwindlabs/headlessui/discussions/2150), [RHF Controller + Listbox](https://github.com/orgs/react-hook-form/discussions/9359)). |
+| React Aria / Spectrum | `shouldUseVirtualFocus` keeps real focus on the input and moves only `aria-activedescendant`; **options may be virtualized** — an option for a value the model chose may not be in the DOM until scrolled. React Aria also **simulates press events** because screen readers fire only `click`; it is tolerant of a plain `click()`, but pointer-only libraries are not ([useComboBox](https://react-spectrum.adobe.com/react-aria/useComboBox.html)). |
+| MUI `Autocomplete` / Ark UI | Filtered (editable) comboboxes require **typing into the input to render the matching option** before it can be clicked — the select-only "click to open, click option" path does not apply; this is the filtered-combobox slice (v1.1b). |
+| Pointer-event-gated widgets | Some listbox items commit on `pointerdown`/`pointerup`/`mousedown`, not `click`; a bare `element.click()` may not register. The driver's activation must escalate: `click()` → and, on readback failure, a `pointerdown`+`pointerup`+`click` sequence. All synthetic events are `isTrusted:false` (§2 already accepts this risk; frameworks ignore it, some strict widgets may not). |
+
+### 9.2 Readback for composite widgets (the load-bearing guarantee)
+
+**Verdict: readback for a combobox is `aria-selected="true"` on an option whose
+accessible name (or `data-value`) matches the plan, corroborated by the trigger
+element's committed text / `aria-activedescendant` — NOT a hidden native
+mirror.** The hidden-mirror path is tempting (shadcn/Radix render a
+visually-hidden `<select>` "BubbleInput" for form submission) but is **not
+reliable enough to be the guarantee**: Radix only renders it when the Select is
+inside a `<form>`, and its value has documented bugs — an empty controlled
+Select reports the *first* option's value rather than `""`
+([radix-ui/primitives#3521](https://github.com/radix-ui/primitives/issues/3521),
+[BubbleInput opt-out #3365](https://github.com/radix-ui/primitives/issues/3365)).
+So:
+
+- **Primary readback**: after activation, requery the listbox (or the last-known
+  option set captured at open) for `[aria-selected="true"]` and compare its
+  accessible name / `data-value` to the planned value. On a select-only
+  combobox that has already closed, read the **trigger's committed text**
+  (`combobox.textContent` / `aria-activedescendant` target text).
+- **Corroborating readback**: if a hidden native mirror exists (`<select>` or
+  `<input>` sharing the field's `name`, or an RHF-managed hidden input), read it
+  too — but treat it as *confirmation*, never as the sole signal, given the
+  empty-value bug.
+- **Failure → revert**: if neither the selected-option name nor the trigger text
+  matches the plan, the driver **closes the popup (Escape) without committing**
+  and reports `left` with `reason:'combobox-readback-mismatch'`. This is the
+  §2 readback-or-revert loop applied verbatim (fill.ts:103-108) — the invariant
+  is preserved, not weakened.
+
+Hidden mirrors *help* when present (a real `change` on them flows straight
+through RHF via the native-setter path §2 already ships) and *complicate* only
+when absent or buggy — which is why they are corroboration, not the contract.
+
+### 9.3 contenteditable plain-text insertion
+
+**Verdict: there is NO editor-agnostic insertion primitive. `execCommand(
+'insertText')` is the closest thing and the only one worth shipping — but it is
+a *two-tier* capability, not universal, so contenteditable is the LAST slice
+(v1.1c) and stays `leave` until then.** Findings:
+
+- Setting `textContent`/`innerHTML` or dispatching a synthetic `InputEvent`
+  does **not** work for editor frameworks: ProseMirror/tiptap, Lexical, and
+  Slate maintain a document model *separate from the DOM* and reconcile from
+  their own transaction/command pipeline, discarding out-of-band DOM writes
+  ([How I defeated ProseMirror](https://dev.to/vesper_finch/how-i-defeated-prosemirror-the-only-way-to-programmatically-insert-text-into-rich-text-editors-1208),
+  [tiptap insertContent](https://tiptap.dev/docs/editor/api/commands/content/insert-content)).
+- `document.execCommand('insertText', false, text)` is deprecated but
+  **ubiquitous and still supported in every browser**, and it triggers the
+  browser's *native* input pipeline — the same `beforeinput`/`input` flow a real
+  keystroke fires — which ProseMirror/tiptap's transaction system picks up
+  correctly. It **requires the editor to be focused with a caret/selection
+  placed first** (focus the element, select-all + delete or collapse the range,
+  then insert)
+  ([MDN execCommand](https://developer.mozilla.org/en-US/docs/Web/API/Document/execCommand)).
+- **But it is not universal**: it works for ProseMirror/tiptap; it is reported
+  **unreliable on Slate** (inserts a raw text node without creating Slate's
+  string-node structure) and **Lexical** prefers its own command bus
+  (`INSERT_TEXT_COMMAND`/`dispatchCommand`), which an outside script cannot reach
+  without the editor instance
+  ([Slate #5721](https://github.com/ianstormtaylor/slate/discussions/5721),
+  [Lexical commands](https://lexical.dev/docs/concepts/commands)).
+- **Readback** for contenteditable is `element.textContent` compared to the
+  planned plain text (whitespace-normalized). Because the editors normalize
+  markup, an exact match is not guaranteed even on success — so the driver
+  accepts a **contains/normalized** match and, on any doubt, reverts (restore
+  the captured original text via a second `execCommand`, or `Cmd/Ctrl+A` +
+  `insertText(original)`), reporting `left`. Given the partial-match fragility,
+  contenteditable ships **last and behind an explicit opt-in** so a wrong-but-
+  plausible body never lands silently.
+
+### 9.4 Checkbox / switch on non-input elements
+
+**Verdict: the simplest, highest-value driver — ship it first (v1.1a).**
+`role=checkbox` / `role=switch` on a `<button>`/`<div>` (Vario's DPA checkbox,
+radix Switch) exposes state via **`aria-checked` (`true`/`false`/`mixed`)**;
+activation is a `click()` or `Space` on the focusable element; the author is
+required to flip `aria-checked` on activation, so readback is deterministic
+([MDN checkbox role](https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/checkbox_role),
+[MDN switch role](https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/switch_role),
+[Adrian Roselli — switch support](https://adrianroselli.com/2021/10/switch-role-support.html)).
+Driver: read desired boolean; if `aria-checked` already matches, no-op (mirrors
+the native checkable's "click only when differing", fill.ts:123); else `click()`
+and read `aria-checked` back; on mismatch, click again to restore the original
+and report `left`. This is a near-exact structural copy of `applyCheckable`
+(fill.ts:114-130) with `el.checked` → `getAttribute('aria-checked')==='true'`.
+
+### 9.5 Prior art for synthetic custom-widget interaction
+
+**Verdict: everyone who fills custom widgets drives the visible UI (open, find
+by name, click) — nobody reads a private model — which is exactly §9.1.**
+Playwright, the most-hardened synthetic-interaction engine, does not special-case
+framework dropdowns at all: it exposes only native `selectOption` and otherwise
+expects the caller to click the trigger and click the option
+([Playwright](https://runebook.dev/en/docs/playwright/api/class-frame/frame-select-option)).
+Password managers (1Password, Dashlane) fill **native inputs** and use their own
+opt-out attributes for custom controls rather than driving arbitrary listboxes —
+confirming there is no free lunch for closed widgets; fieldfox's edge is its
+cooperative author-hint channel (§5), which can pin a widget→value mapping the
+model would otherwise guess. Bitwarden's field collection is the study-only GPL
+reference already cited (§1, §2); nothing is copied. Net: the driver design is
+prior-art-aligned and the risk is timing/portal fragility, not novelty.
+
+### 9.6 Driver abstraction (how it slots into the existing loop)
+
+A driver is three pure-ish functions, mirroring the native `applyOne` shape
+(fill.ts:73-84) so the existing `applyFillPlan` loop keeps its structure:
+
+```ts
+interface FillDriver {
+  // introspection-time: does this element need a driver? null → native path / leave.
+  detect(el: Element): boolean;
+  // apply the value as an async interaction sequence, bounded by a timeout.
+  fill(el: Element, value: Fill['value'], signal: AbortSignal): Promise<void>;
+  // read the committed value back for the readback-or-revert gate.
+  readback(el: Element): string | string[] | null;
+  // undo an in-progress/failed interaction non-destructively (close popup, restore text).
+  revert(el: Element, original: CapturedState): Promise<void>;
+}
+```
+
+Integration points, all additive:
+
+- **introspect.ts**: `computeFillable` (introspect.ts:310-319) flips from
+  hard-`false` to "fillable via driver X" for detected widgets. A widget with a
+  matched driver becomes `fillable:true` **and** gains a `driver` tag; widgets
+  with no matching driver stay `fillable:false` (unchanged behavior). The
+  belt-and-braces server drop (§6) and `applyFillPlan`'s `isNonFillable` guard
+  (fill.ts:216-223) still hold: an un-driven widget is never written.
+- **fill.ts**: `applyOne` gains a branch — if the resolved element has a
+  registered driver, run the async driver path (§9.7) instead of the sync
+  native path. The readback-or-revert contract is *identical*: driver
+  `readback()` must equal the plan or the driver `revert()`s and the field is
+  `left` (fill.ts:63-66 semantics unchanged).
+- **element.ts** `runFill` (element.ts:240-296): the per-field loop becomes
+  `await`-aware (§9.7). The disable/shimmer effect and full-restore-on-abort
+  already exist (effects.ts, element.ts:270-320) and cover driver fields for
+  free — a driver field is one of `affected`.
+
+**A driver whose `readback()` cannot CONFIRM the value reports mismatch → the
+loop reverts and marks `left`.** Leave-on-uncertainty stays a code guarantee.
+
+### 9.7 Async / timing model
+
+The native loop is synchronous per field; drivers need `await`s (open animation,
+portal mount, virtualized scroll). Design:
+
+- **`applyFillPlan` becomes `async`** and awaits each field in sequence (not
+  parallel — sequential keeps the "one popup open at a time" invariant and
+  bounds DOM churn). Native fields resolve synchronously inside the async loop
+  (a resolved Promise), so their behavior and tests are unchanged.
+- **Bounded per-field driver timeout** (proposed **1500 ms**, tunable): open the
+  widget, poll for the listbox/option (rAF or `MutationObserver`, cap the
+  polls), activate, poll for `aria-selected`/committed state, close. If the
+  timeout elapses at any step, `revert()` and mark `left` —
+  `reason:'driver-timeout'`.
+- **Abort semantics**: the existing `AbortController` (element.ts:268-277,
+  abortFill) threads a `signal` into every driver; on supersession/disconnect a
+  driver must stop, `revert()`, and leave the field at its captured original.
+  The non-destructive invariant already restores affected fields on abort
+  (element.ts:312-320) — drivers extend "restore" to mean *close the popup and
+  restore prior selection/text*, never a half-open dropdown.
+- **"Revert" for a combobox opened-but-not-committed = `Escape` (or click
+  outside) to close with no selection change** (§9.1) — the widget returns to
+  its prior committed value, which the driver captured before opening.
+
+### 9.8 Wire-contract impact & the schema-bump question
+
+Three sub-questions, weighed honestly:
+
+1. **Does `FormField` need a `kind:"combobox"` / driver tag?** Today
+   `introspect.ts kindOf` maps ARIA widgets to `kind:'other'` (introspect.ts:288)
+   and `contract.ts FieldKind` has no combobox/switch member. To let the model
+   *target* a combobox with an option value (not free text), the field should
+   carry (a) a discriminator the model can see and (b) an **options list**. Two
+   ways to add options without a schema-shape change: reuse the existing
+   `FormField.options: FieldOption[]` (already on the contract, contract.ts:67)
+   and the existing `kind` enum by adding `'combobox'`/`'switch'` **enum
+   members**. **Adding an enum member is a shape change to `FieldKind`** and, per
+   the §0 version-skew row ("any change to FormSchema/FillRequest/FillPlan shape
+   must bump `schemaVersion`, snapshot-test enforced"), **bumps `SCHEMA_VERSION`
+   to 3**. The server would then serve majors {1, 2, 3} per the same policy. A
+   `driver` tag on the field is widget-internal and need **not** cross the wire
+   (the model targets by `kind` + `options`; the widget re-derives the driver at
+   fill time from the live element) — so the wire delta is minimal: two enum
+   members, no new properties. This keeps the flat strict `ModelFillPlan`
+   (contract.ts:121-130) **completely unchanged** — the model still emits
+   `{fieldId, action, value}`; `value` is the chosen option's value/name, which
+   the closed-listbox already constrains.
+
+2. **Options enumeration for closed listboxes (the portal problem).** A
+   select-only combobox renders its options **only when opened**, into a portal.
+   Two honest options:
+   - **(A) Introspection-time open-probe**: open each combobox during
+     introspection, harvest `[role=option]` names/values, close. **Cost**: it is
+     *visible* (dropdowns flicker open), it fires the site's open handlers
+     (analytics, data-fetch for async options), it races animations, and on
+     modal Selects (Radix `hideOthers`) it briefly `aria-hidden`s the page. This
+     contradicts the widget's "quiet until asked" posture and risks side
+     effects. **Not recommended as the default.**
+   - **(B) Option-less free-text + post-hoc matching**: introspect the combobox
+     with *no* options (or only the current committed value), send it to the
+     model as a free-text-ish field with its label, let the model propose a
+     value string, and at **fill time** open the widget, match the model's
+     string to an option by accessible name (case/diacritic-insensitive, then
+     fuzzy), click the best match, and readback-or-revert. **Cost**: the model
+     can propose an out-of-set value → the driver finds no match →
+     `left` (safe, just missed). **Benefit**: zero introspection-time side
+     effects, no visible flicker, honors "quiet until asked." **Recommended
+     default**, with the author-hint escape hatch (`data-ff-hint` can enumerate
+     allowed values for a critical Select) and open-probe available only behind
+     an explicit opt-in if a customer needs closed-set guarantees.
+
+3. **Verdict on the bump**: options-list-on-combobox is *not* required if we take
+   (B) — the model matches post-hoc — but a **`kind` discriminator is** required
+   so the model knows a field is a selectable widget rather than free text.
+   Minimal, honest answer: **bump `SCHEMA_VERSION` to 3 for two new `FieldKind`
+   members (`combobox`, `switch`), no new properties, `ModelFillPlan`
+   unchanged**; enumerate options only via approach (B) at fill time (+ optional
+   author hint), not an introspection-time open-probe. This is a judgment call
+   flagged for Sebastian (below).
+
+### 9.9 Bundle budget
+
+Drivers land in the **lazy chunk** (panel/paste are already lazy; the eager
+35 KB budget — register + trigger + introspection — is locked, PLAN §0). The
+fill executor `fill.ts` is loaded on first fill, already in the lazy path. Rough
+estimate (minified+gzip): checkbox/switch driver ~0.4 KB; select-only combobox
+driver (open/poll/match/readback/revert + a small accessible-name matcher)
+~2–3 KB; filtered-combobox (typing + debounce) +~1 KB; contenteditable
+(`execCommand` + focus/selection dance + normalized readback) ~1 KB. **All four
+slices together ≈ 4–6 KB gzip in the lazy chunk** — comfortably clear of the
+75 KB hard ceiling and irrelevant to the eager budget. The only eager cost is a
+few bytes in `introspect.ts` for driver *detection* (an `aria-*`/role check per
+custom element), which the walker largely already does (introspect.ts:126-128,
+310-318).
+
+### 9.10 Phased slices → pilot acceptance mapping
+
+Pilot target: **≥7/10 fillable on Backplane's Create-Card dialog** (today 3/10;
+`docs/pilot/REPORT.md`). That dialog's non-fillable seven are: 1 tiptap
+contenteditable + 6 shadcn `role=combobox` Selects.
+
+| Slice | Delivers | Backplane math | Depends on |
+|---|---|---|---|
+| **v1.1a** | ARIA `role=checkbox`/`switch` driver (§9.4) + select-only combobox with **already-visible / post-hoc-matched** options (§9.2, approach B) | +6 Selects → **9/10** ✅ (**meets ≥7/10**); also unblocks Vario country Select + DPA checkbox | SCHEMA_VERSION→3 (§9.8) |
+| **v1.1b** | Filtered/editable comboboxes (MUI Autocomplete, type-to-filter) + robust portal/virtualized-listbox handling (React Aria) | no extra Backplane fields, but covers the broader ecosystem | v1.1a |
+| **v1.1c** | contenteditable via `execCommand('insertText')` (tiptap/ProseMirror only; Slate/Lexical explicitly out) (§9.3) | +1 tiptap description → **10/10** | v1.1a |
+
+**v1.1a alone clears the ≥7/10 gate** (9/10). v1.1c reaches 10/10 but carries the
+most fragility (partial-match, editor-specific) and ships last.
+
+### 9.11 Test strategy
+
+- **Hand-rolled APG-conformant fixtures, not a real framework, for the unit/e2e
+  contract.** A `role=combobox`+portal `role=listbox` fixture and a
+  `role=checkbox` button fixture can be authored in `examples/plain-html/` (like
+  the existing `formless.html`) with **zero framework deps**, exercising the
+  driver against the *pure ARIA contract* the driver actually relies on — this
+  is the deterministic regression surface, mirroring how the current e2e uses
+  hand-authored fixtures with stable selectors (`e2e/fill.spec.ts`,
+  `examples/plain-html/`).
+- **Real shadcn in `examples/react-host/` for the fidelity check.** The
+  react-host already exists on **React 19** with react-hook-form
+  (`examples/react-host/package.json`, `App.tsx`); adding a real `@radix-ui`/
+  shadcn `Select` + a radix `Switch` there gives one high-fidelity Playwright
+  target proving the driver survives *actual* portal/`hideOthers`/BubbleInput
+  behavior — the thing the hand-rolled fixture cannot fake. Keep it additive: a
+  second form on the react-host, not a change to the existing profile form the
+  framework-matrix test depends on.
+- **Readback-or-revert must be asserted directly**: a test where the model
+  targets an out-of-set combobox value proves the driver `left`s the field
+  (leave-on-uncertainty), analogous to the existing leave-semantics test
+  (`e2e/fill.spec.ts` "leave semantics").
+
+### 9.12 Risk table
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Portal/`hideOthers` (Radix) confuses open-detection | med | driver times out → `left` (safe) | find listbox by `aria-controls` id / body-portal scan; timeout→revert |
+| Virtualized options: model's value not in DOM | med | miss → `left` | scroll-poll within timeout; author-hint enumerates values; else safe leave |
+| Pointer-only widget ignores `click()` | med | miss → `left` | escalate to `pointerdown`+`pointerup`+`click`; else leave |
+| Introspection-time open-probe side effects (if approach A chosen) | high (if chosen) | visible flicker, fires site handlers, analytics noise | **default to approach B (no probe)**; probe only behind explicit opt-in |
+| execCommand insertText wrong/partial on Slate/Lexical | high on those editors | wrong body could land | detect editor family; ship tiptap/ProseMirror only; normalized readback + revert; contenteditable behind opt-in |
+| `isTrusted:false` synthetic events filtered by a strict widget | low | miss → `left` | accepted §2 risk; leave-on-uncertainty backstops |
+| Async loop regresses the native sync path | low | broad | native fields stay synchronous inside the async loop; existing e2e is the guard |
+| Schema bump churn (v1 widgets on a v3 server) | low | handled | §0 version-skew policy already serves majors {1,2,3} |
+
+### 9.13 Non-goals for v1.1
+
+Closed shadow DOM / cross-origin iframe widgets (structurally unreachable, §1);
+Slate and Lexical contenteditable (no outside-instance primitive, §9.3);
+date-picker calendar popups and multi-step composite widgets (grid combobox,
+tag/token editors) — deferred to a later cycle; introspection-time open-probe as
+a *default* (opt-in only); keyboard-simulation fill (still PLAN §0 out-of-scope).
+Drivers never auto-submit and never fill a widget whose readback can't confirm.
+
+### 9.14 Verdict summary
+
+A driver layer raises Backplane coverage from 3/10 to **9/10 with slice v1.1a
+alone** (ARIA checkbox/switch + select-only combobox, post-hoc option matching)
+and 10/10 with contenteditable (v1.1c, tiptap-only). The universal primitive —
+`open → match option by accessible name → activate → readback `aria-selected`/
+committed text → revert-on-mismatch` — is precisely what Playwright and every
+custom-widget filler already does; the readback-or-revert and leave-on-
+uncertainty invariants carry over **unchanged** (a driver that can't confirm
+reports `left`). Cost is timing/portal fragility, not novelty or bundle
+(~4–6 KB lazy). The one real decision is the **`SCHEMA_VERSION`→3** bump (two new
+`FieldKind` members) and the **no-introspection-open-probe** default — both
+flagged below.
+
+### Open questions for Sebastian
+
+1. **Schema-bump appetite.** v1.1a needs `FieldKind` to gain `combobox`/`switch`
+   → `SCHEMA_VERSION` 3 (server serves majors {1,2,3}). Acceptable now, or hold
+   drivers behind the existing `kind:'other'` + a widget-internal flag to avoid
+   the bump (at the cost of the model not cleanly knowing a field is selectable)?
+2. **Introspection-time open-probe acceptability.** The recommended default is
+   **B (no probe, post-hoc match at fill time)** — quiet, no side effects, but
+   the model can propose out-of-set values (safe leave). Is a *visible*
+   open-probe to harvest exact options ever acceptable for closed-set
+   guarantees, or is "quiet until asked" inviolable (making the author-hint the
+   only closed-set path)?
+3. **contenteditable scope.** Ship `execCommand('insertText')` for
+   tiptap/ProseMirror only (Slate/Lexical explicitly `leave`), or hold *all*
+   contenteditable to v2 until an editor-detection story exists? The pilot's one
+   rich editor (Backplane description) is tiptap, so v1.1c would fill it.
+4. **Real-shadcn test dep.** OK to add `@radix-ui/react-select` + shadcn to
+   `examples/react-host` (dev-only, React 19) for a high-fidelity Playwright
+   target, or keep the whole driver test surface framework-free (hand-rolled APG
+   fixtures only, accepting lower fidelity to real Radix portal/BubbleInput)?
+5. **Per-field driver timeout.** Proposed 1500 ms before a driver gives up and
+   leaves the field. Right for the "quiet, non-annoying" UX, or tighter/looser?
