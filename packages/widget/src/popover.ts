@@ -13,6 +13,34 @@ import type { RequestImage } from '@fieldfox/shared';
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB decoded, matching the server cap
 const DOWNSCALE_MAX_EDGE = 1280; // longest-side target before base64 encoding
+const VIEWPORT_MARGIN = 8; // keep the panel this many px clear of every viewport edge (matches the open-position clamp)
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+// Pure viewport clamp for the panel's top-left corner: keep the whole panel
+// inside [margin, viewport - size - margin]. When the panel is larger than the
+// viewport on an axis the lower bound wins (pin to the top/left margin) so the
+// header stays reachable rather than scrolling the panel off the top. Extracted
+// as a pure function because jsdom has no layout — the drag/clamp MATH is
+// unit-tested here, not through getBoundingClientRect (see test/setup.ts).
+function clampToViewport(
+  pos: Point,
+  size: { width: number; height: number },
+  viewport: { width: number; height: number },
+  margin = VIEWPORT_MARGIN,
+): Point {
+  const clampAxis = (v: number, extent: number, panelExtent: number): number => {
+    const max = Math.max(margin, extent - panelExtent - margin);
+    return Math.min(Math.max(v, margin), max);
+  };
+  return {
+    x: clampAxis(pos.x, viewport.width, size.width),
+    y: clampAxis(pos.y, viewport.height, size.height),
+  };
+}
 
 export interface PopoverHandle {
   open(): void;
@@ -52,7 +80,17 @@ const PANEL_STYLES = `
   font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
 }
 .ff-panel[popover] { inset: unset; }
-.ff-title { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+/* The title doubles as the drag handle (RESEARCH: no separate chrome — the panel
+   is intentionally minimal). grab/grabbing signal draggability; user-select:none
+   stops the pointerdown from starting a text selection mid-drag. touch-action:none
+   lets pointermove fire on touch without the browser claiming the gesture to scroll. */
+.ff-title {
+  margin: 0 0 8px; font-size: 15px; font-weight: 600;
+  cursor: grab; user-select: none; touch-action: none;
+}
+.ff-panel.ff-dragging .ff-title { cursor: grabbing; }
+/* A minimized strip is click-to-expand, so its header is not a drag handle. */
+.ff-panel.ff-minimized .ff-title { cursor: pointer; }
 .ff-textarea {
   box-sizing: border-box;
   width: 100%;
@@ -124,6 +162,7 @@ export function createPopover(
 
   const title = document.createElement('p');
   title.className = 'ff-title';
+  title.setAttribute('part', 'panel-header');
   title.textContent = 'Describe what to fill';
 
   const textarea = document.createElement('textarea');
@@ -170,6 +209,11 @@ export function createPopover(
   let open = false;
   let busy = false;
   let minimized = false;
+  // Once the user drags, THEIR position wins for the rest of this open session:
+  // auto-positioning (positionNearHost, expand-restore) must not override it.
+  // Stored in fixed/viewport coords; reset on close so the next open re-anchors.
+  let draggedPos: Point | null = null;
+  let dragPointerId: number | null = null;
 
   const usePopoverApi = (): boolean =>
     typeof (panel as unknown as { showPopover?: unknown }).showPopover ===
@@ -181,15 +225,27 @@ export function createPopover(
   // unreachable by scrolling (e2e finding #2, WebKit). Called after the panel
   // is rendered so its own rect is measurable for viewport clamping.
   function positionNearHost(): void {
+    // The user's drag wins for the session: once they've moved the panel, this
+    // auto-anchor is a no-op so re-open/expand/reflow can't yank it back.
+    if (draggedPos) return applyPosition(draggedPos);
     const rect = host.getBoundingClientRect();
     panel.style.position = 'fixed';
     panel.style.margin = '0';
+    applyPosition({ x: rect.left, y: rect.top });
+  }
+
+  // Write a fixed-coordinate top-left, clamped fully inside the current viewport.
+  function applyPosition(pos: Point): void {
+    panel.style.position = 'fixed';
+    panel.style.margin = '0';
     const panelRect = panel.getBoundingClientRect();
-    const vh = window.innerHeight || 0;
-    const vw = window.innerWidth || 0;
-    const clamp = (v: number, max: number) => Math.min(Math.max(v, 8), Math.max(max, 8));
-    panel.style.top = `${clamp(rect.top, vh - panelRect.height - 8)}px`;
-    panel.style.left = `${clamp(rect.left, vw - panelRect.width - 8)}px`;
+    const clamped = clampToViewport(
+      pos,
+      { width: panelRect.width, height: panelRect.height },
+      { width: window.innerWidth || 0, height: window.innerHeight || 0 },
+    );
+    panel.style.left = `${clamped.x}px`;
+    panel.style.top = `${clamped.y}px`;
   }
 
   function positionFallback(): void {
@@ -222,10 +278,95 @@ export function createPopover(
     }
   }
 
+  // --- Dragging (header as handle) --------------------------------------------
+  // The title is the drag handle. A drag records draggedPos so the user's chosen
+  // spot survives reflow, minimize/expand, and window resize for this session.
+  let dragGrab: Point | null = null; // pointer→panel-corner offset, so the corner tracks the cursor
+
+  function onHandlePointerDown(event: PointerEvent): void {
+    // Left button / primary pointer only; a minimized strip is click-to-expand,
+    // not draggable; drags that begin on an interactive control (a future close
+    // button, a link) belong to that control, not the drag.
+    if (event.button !== 0 || minimized) return;
+    if ((event.target as Element | null)?.closest('button, a, input, textarea, select, [tabindex]')) {
+      return;
+    }
+    const panelRect = panel.getBoundingClientRect();
+    dragGrab = { x: event.clientX - panelRect.left, y: event.clientY - panelRect.top };
+    dragPointerId = event.pointerId;
+    panel.classList.add('ff-dragging');
+    // preventDefault backstops user-select:none (belt-and-suspenders against a
+    // text selection starting) and setPointerCapture keeps move/up flowing to the
+    // handle even when the cursor outruns the panel.
+    event.preventDefault();
+    try {
+      title.setPointerCapture(event.pointerId);
+    } catch {
+      // jsdom/older engines may lack pointer capture; document listeners below
+      // still deliver the move/up sequence.
+    }
+    title.addEventListener('pointermove', onHandlePointerMove);
+    title.addEventListener('pointerup', onHandlePointerUp);
+    title.addEventListener('pointercancel', onHandlePointerUp);
+  }
+
+  function onHandlePointerMove(event: PointerEvent): void {
+    if (dragGrab === null || event.pointerId !== dragPointerId) return;
+    event.preventDefault();
+    const next = { x: event.clientX - dragGrab.x, y: event.clientY - dragGrab.y };
+    const panelRect = panel.getBoundingClientRect();
+    draggedPos = clampToViewport(
+      next,
+      { width: panelRect.width, height: panelRect.height },
+      { width: window.innerWidth || 0, height: window.innerHeight || 0 },
+    );
+    panel.style.left = `${draggedPos.x}px`;
+    panel.style.top = `${draggedPos.y}px`;
+  }
+
+  function onHandlePointerUp(event: PointerEvent): void {
+    if (event.pointerId !== dragPointerId) return;
+    dragGrab = null;
+    dragPointerId = null;
+    panel.classList.remove('ff-dragging');
+    try {
+      title.releasePointerCapture(event.pointerId);
+    } catch {
+      /* capture may not have been taken; nothing to release */
+    }
+    title.removeEventListener('pointermove', onHandlePointerMove);
+    title.removeEventListener('pointerup', onHandlePointerUp);
+    title.removeEventListener('pointercancel', onHandlePointerUp);
+  }
+  title.addEventListener('pointerdown', onHandlePointerDown);
+
+  // Keep the panel inside the viewport when the window shrinks; re-clamp the
+  // dragged spot if there is one, otherwise the current (auto) position. Added
+  // only while open (doOpen) and removed on close/destroy so nothing fires for a
+  // closed panel.
+  function onWindowResize(): void {
+    if (!open) return;
+    if (minimized) {
+      positionMinimized();
+      return;
+    }
+    const panelRect = panel.getBoundingClientRect();
+    const current = draggedPos ?? { x: panelRect.left, y: panelRect.top };
+    applyPosition(current);
+    if (draggedPos) {
+      draggedPos = clampToViewport(
+        current,
+        { width: panelRect.width, height: panelRect.height },
+        { width: window.innerWidth || 0, height: window.innerHeight || 0 },
+      );
+    }
+  }
+
   function doOpen(): void {
     if (open) return;
     open = true;
     clearStatus();
+    draggedPos = null; // a fresh open re-anchors to the host; drag state does not persist across opens
     setMinimized(false); // every open starts in the full intake state
     if (usePopoverApi()) {
       (panel as unknown as { showPopover: () => void }).showPopover();
@@ -237,6 +378,9 @@ export function createPopover(
     // a capture-phase document listener runs before the host's (Radix's)
     // document handlers and before the Popover API's own light-dismiss.
     document.addEventListener('keydown', captureEscape, true);
+    // Keep the panel on-screen through viewport changes; scoped to the open
+    // session so a closed panel holds no window listener.
+    window.addEventListener('resize', onWindowResize);
     // Focus the textarea so keyboard users land inside the trap immediately.
     textarea.focus();
   }
@@ -245,6 +389,8 @@ export function createPopover(
     if (!open) return;
     open = false;
     document.removeEventListener('keydown', captureEscape, true);
+    window.removeEventListener('resize', onWindowResize);
+    draggedPos = null; // closing resets to default anchoring for the next open
     if (usePopoverApi()) {
       (panel as unknown as { hidePopover: () => void }).hidePopover();
     } else {
@@ -437,7 +583,9 @@ export function createPopover(
       panel.removeAttribute('title');
     }
     // Reposition for the new size/role: docked away from the form when minimized,
-    // back near the host when expanded. (No-op before the panel is first opened.)
+    // and on expand back to the user's dragged spot if they moved it (re-clamped
+    // to the current viewport by positionNearHost) or near the host otherwise.
+    // (No-op before the panel is first opened.)
     if (open) {
       if (next) positionMinimized();
       else positionNearHost();
@@ -494,9 +642,10 @@ export function createPopover(
     isMinimized: () => minimized,
     isTrapActive: trapActive,
     destroy(): void {
-      // Match doClose's teardown even if destroyed while open (avoid a leaked
-      // document listener firing after the panel is gone).
+      // Match doClose's teardown even if destroyed while open (avoid leaked
+      // document/window listeners firing after the panel is gone).
       document.removeEventListener('keydown', captureEscape, true);
+      window.removeEventListener('resize', onWindowResize);
       panel.remove();
     },
   };

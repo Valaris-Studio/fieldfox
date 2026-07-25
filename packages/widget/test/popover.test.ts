@@ -377,3 +377,240 @@ test('Tab from the last focusable cycles to the first (focus trap)', () => {
   // The trap prevents the browser default (which would leave the panel).
   expect(tab.defaultPrevented).toBe(true);
 });
+
+// --- Dragging the header (draggable-panel card) -----------------------------
+// jsdom has no layout (getBoundingClientRect → zeros), no PointerEvent, and no
+// pointer capture. Stub a fixed panel rect + viewport size so the drag/clamp
+// MATH is exercised (mirrors test/setup.ts: the positioning math is verified
+// here, not through a real engine), and synthesize pointer events by hand.
+
+const PANEL_W = 360;
+const PANEL_H = 300;
+
+// Give the panel a stable rect that follows its own style.left/top (which the
+// drag code writes), so a move-then-read round-trips like a real engine would.
+function stubPanelLayout(panel: HTMLElement, vw = 1000, vh = 800): void {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: vw });
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: vh });
+  panel.getBoundingClientRect = () => {
+    const left = parseFloat(panel.style.left || '0') || 0;
+    const top = parseFloat(panel.style.top || '0') || 0;
+    return {
+      x: left, y: top, left, top,
+      width: PANEL_W, height: PANEL_H,
+      right: left + PANEL_W, bottom: top + PANEL_H,
+      toJSON: () => {},
+    } as DOMRect;
+  };
+}
+
+function firePointer(
+  target: EventTarget,
+  type: string,
+  { clientX, clientY, pointerId = 1, button = 0 }: { clientX: number; clientY: number; pointerId?: number; button?: number },
+): Event {
+  // jsdom lacks PointerEvent; a MouseEvent carries clientX/clientY/button, and
+  // we bolt pointerId on so the handler's pointer-tracking sees it.
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY, button });
+  Object.defineProperty(event, 'pointerId', { value: pointerId });
+  target.dispatchEvent(event);
+  return event;
+}
+
+function header(root: ShadowRoot): HTMLElement {
+  return root.querySelector('[part="panel-header"]') as HTMLElement;
+}
+
+function panelOf(root: ShadowRoot): HTMLElement {
+  return root.querySelector('[part="panel"]') as HTMLElement;
+}
+
+// jsdom elements have no pointer-capture methods; add inert stubs so the drag
+// code's set/releasePointerCapture calls don't throw (it also try/catches them).
+function stubPointerCapture(el: HTMLElement): void {
+  (el as unknown as { setPointerCapture: (id: number) => void }).setPointerCapture = () => {};
+  (el as unknown as { releasePointerCapture: (id: number) => void }).releasePointerCapture = () => {};
+}
+
+test('dragging the header moves the panel by the pointer delta', () => {
+  const { handle, root } = harness!;
+  handle.open();
+  const panel = panelOf(root);
+  const handleEl = header(root);
+  stubPanelLayout(panel);
+  stubPointerCapture(handleEl);
+
+  // Anchor the panel somewhere known, then grab the header at (150,20) inside it.
+  panel.style.left = '100px';
+  panel.style.top = '50px';
+
+  firePointer(handleEl, 'pointerdown', { clientX: 250, clientY: 70 });
+  firePointer(handleEl, 'pointermove', { clientX: 350, clientY: 190 }); // +100x, +120y
+  firePointer(handleEl, 'pointerup', { clientX: 350, clientY: 190 });
+
+  // The grab offset (150,20) is preserved: corner = pointer - offset.
+  expect(parseFloat(panel.style.left)).toBe(200);
+  expect(parseFloat(panel.style.top)).toBe(170);
+});
+
+test('a pointerdown on an interactive control in the header does not start a drag', () => {
+  const { handle, root } = harness!;
+  handle.open();
+  const panel = panelOf(root);
+  const handleEl = header(root);
+  stubPanelLayout(panel);
+  stubPointerCapture(handleEl);
+  panel.style.left = '100px';
+  panel.style.top = '50px';
+
+  // Simulate a future close button living inside the header.
+  const button = document.createElement('button');
+  handleEl.appendChild(button);
+
+  firePointer(button, 'pointerdown', { clientX: 250, clientY: 70 });
+  firePointer(handleEl, 'pointermove', { clientX: 350, clientY: 190 });
+
+  // No drag was armed, so the panel stayed put.
+  expect(parseFloat(panel.style.left)).toBe(100);
+  expect(parseFloat(panel.style.top)).toBe(50);
+});
+
+test('dragging past a viewport edge clamps the panel fully inside', () => {
+  const { handle, root } = harness!;
+  handle.open();
+  const panel = panelOf(root);
+  const handleEl = header(root);
+  stubPanelLayout(panel, 1000, 800);
+  stubPointerCapture(handleEl);
+  panel.style.left = '100px';
+  panel.style.top = '100px';
+
+  // Grab at the panel's top-left corner (offset 0,0) and yank far past the
+  // top-left edge; the corner must clamp to the 8px margin, not go negative.
+  firePointer(handleEl, 'pointerdown', { clientX: 100, clientY: 100 });
+  firePointer(handleEl, 'pointermove', { clientX: -500, clientY: -500 });
+  expect(parseFloat(panel.style.left)).toBe(8);
+  expect(parseFloat(panel.style.top)).toBe(8);
+
+  // Now yank far past the bottom-right edge; clamp to viewport - size - margin.
+  firePointer(handleEl, 'pointermove', { clientX: 5000, clientY: 5000 });
+  expect(parseFloat(panel.style.left)).toBe(1000 - PANEL_W - 8);
+  expect(parseFloat(panel.style.top)).toBe(800 - PANEL_H - 8);
+  firePointer(handleEl, 'pointerup', { clientX: 5000, clientY: 5000 });
+});
+
+test('the dragged position survives minimize → expand (re-clamped to the viewport)', () => {
+  const { handle, root } = harness!;
+  handle.open();
+  const panel = panelOf(root);
+  const handleEl = header(root);
+  stubPanelLayout(panel, 1000, 800);
+  stubPointerCapture(handleEl);
+  panel.style.left = '100px';
+  panel.style.top = '100px';
+
+  // Drag to a distinct spot.
+  firePointer(handleEl, 'pointerdown', { clientX: 100, clientY: 100 });
+  firePointer(handleEl, 'pointermove', { clientX: 400, clientY: 300 });
+  firePointer(handleEl, 'pointerup', { clientX: 400, clientY: 300 });
+  expect(parseFloat(panel.style.left)).toBe(400);
+  expect(parseFloat(panel.style.top)).toBe(300);
+
+  // Minimizing docks the strip (position changes) …
+  handle.showStatus('Filled 2 fields.');
+  expect(handle.isMinimized()).toBe(true);
+
+  // … and expanding restores the user's dragged spot, not the host anchor.
+  handle.expand();
+  expect(handle.isMinimized()).toBe(false);
+  expect(parseFloat(panel.style.left)).toBe(400);
+  expect(parseFloat(panel.style.top)).toBe(300);
+});
+
+test('after a drag, a re-anchor (showError → expand) keeps the dragged position', () => {
+  const { handle, root } = harness!;
+  handle.open();
+  const panel = panelOf(root);
+  const handleEl = header(root);
+  stubPanelLayout(panel, 1000, 800);
+  stubPointerCapture(handleEl);
+  panel.style.left = '100px';
+  panel.style.top = '100px';
+
+  firePointer(handleEl, 'pointerdown', { clientX: 100, clientY: 100 });
+  firePointer(handleEl, 'pointermove', { clientX: 450, clientY: 350 });
+  firePointer(handleEl, 'pointerup', { clientX: 450, clientY: 350 });
+
+  // An error un-minimizes via positionNearHost; the dragged spot must win.
+  handle.showError('Could not fill the form. Please try again.');
+  expect(parseFloat(panel.style.left)).toBe(450);
+  expect(parseFloat(panel.style.top)).toBe(350);
+});
+
+test('closing then re-opening resets to default anchoring (drag position does not persist)', () => {
+  const { handle, root } = harness!;
+  handle.open();
+  const panel = panelOf(root);
+  const handleEl = header(root);
+  stubPanelLayout(panel, 1000, 800);
+  stubPointerCapture(handleEl);
+  panel.style.left = '100px';
+  panel.style.top = '100px';
+
+  firePointer(handleEl, 'pointerdown', { clientX: 100, clientY: 100 });
+  firePointer(handleEl, 'pointermove', { clientX: 500, clientY: 400 });
+  firePointer(handleEl, 'pointerup', { clientX: 500, clientY: 400 });
+  expect(parseFloat(panel.style.left)).toBe(500);
+
+  handle.close();
+  handle.open();
+  // The host rect is (0,0) under jsdom, so re-anchoring clamps to the 8px margin
+  // rather than keeping the old dragged 500/400.
+  expect(parseFloat(panel.style.left)).toBe(8);
+  expect(parseFloat(panel.style.top)).toBe(8);
+});
+
+test('window resize re-clamps a dragged panel back inside a shrunken viewport', () => {
+  const { handle, root } = harness!;
+  handle.open();
+  const panel = panelOf(root);
+  const handleEl = header(root);
+  stubPanelLayout(panel, 1000, 800);
+  stubPointerCapture(handleEl);
+  panel.style.left = '100px';
+  panel.style.top = '100px';
+
+  // Drag to the far bottom-right of the large viewport.
+  firePointer(handleEl, 'pointerdown', { clientX: 100, clientY: 100 });
+  firePointer(handleEl, 'pointermove', { clientX: 900, clientY: 700 });
+  firePointer(handleEl, 'pointerup', { clientX: 900, clientY: 700 });
+  expect(parseFloat(panel.style.left)).toBe(1000 - PANEL_W - 8);
+
+  // Shrink the viewport; the resize handler must pull the panel back in.
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 500 });
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 });
+  window.dispatchEvent(new Event('resize'));
+
+  expect(parseFloat(panel.style.left)).toBe(500 - PANEL_W - 8);
+  expect(parseFloat(panel.style.top)).toBe(400 - PANEL_H - 8);
+});
+
+test('dragging is disabled while the panel is minimized (strip is click-to-expand)', () => {
+  const { handle, root } = harness!;
+  handle.open();
+  const panel = panelOf(root);
+  const handleEl = header(root);
+  stubPanelLayout(panel, 1000, 800);
+  stubPointerCapture(handleEl);
+
+  handle.showStatus('Filled 1 field.'); // minimizes + docks
+  const dockedLeft = panel.style.left;
+  const dockedTop = panel.style.top;
+
+  firePointer(handleEl, 'pointerdown', { clientX: 100, clientY: 100 });
+  firePointer(handleEl, 'pointermove', { clientX: 400, clientY: 400 });
+
+  // No drag: the docked position is unchanged.
+  expect(panel.style.left).toBe(dockedLeft);
+  expect(panel.style.top).toBe(dockedTop);
+});
