@@ -31,6 +31,13 @@ const DEFAULT_ENDPOINT = '/api/fill';
 // imports shared TYPES, not zod runtime"; RESEARCH §4 top risk #3).
 const WIRE_SCHEMA_VERSION = 2;
 
+// Caps for the form-level embedder inputs, mirrored locally from the shared
+// contract's MAX_FORM_CONTEXT / MAX_FORM_ID (same zod-free-bundle reasoning as
+// WIRE_SCHEMA_VERSION). Over-cap attribute values are truncated here so the
+// request is well-formed; the server re-validates regardless.
+const MAX_FORM_CONTEXT = 2000;
+const MAX_FORM_ID = 128;
+
 const STYLES = `
 :host {
   all: initial;
@@ -85,7 +92,7 @@ export class FieldFoxElement extends HTMLElement {
     void this.runFill(event as CustomEvent);
   };
 
-  static readonly observedAttributes = ['target', 'endpoint'];
+  static readonly observedAttributes = ['target', 'endpoint', 'context', 'form-id'];
 
   constructor() {
     super();
@@ -109,8 +116,10 @@ export class FieldFoxElement extends HTMLElement {
     this.forms.length = 0;
   }
 
-  attributeChangedCallback(): void {
-    // Re-resolve the mount if `target` changes while connected.
+  attributeChangedCallback(name: string): void {
+    // `context` / `form-id` are read fresh when a request is built, so a change
+    // needs no re-mount. Only the mount-shaping attributes force a re-resolve.
+    if (name !== 'target' && name !== 'endpoint') return;
     if (this.isConnected && this.trigger) {
       this.disconnectedCallback();
       this.mount();
@@ -191,6 +200,20 @@ export class FieldFoxElement extends HTMLElement {
     return this.getAttribute('site-key') || undefined;
   }
 
+  // Form-level embedder inputs (PLAN §0). Accessor names stay disjoint from the
+  // `context` / `form-id` attribute names for the same React 19 reason as
+  // `fillEndpoint` above. Empty/whitespace-only reads as absent so an optional
+  // schema field never ships as "" on the wire; over-cap values are truncated.
+  private get formContext(): string | undefined {
+    const value = this.getAttribute('context')?.trim();
+    return value ? value.slice(0, MAX_FORM_CONTEXT) : undefined;
+  }
+
+  private get formId(): string | undefined {
+    const value = this.getAttribute('form-id')?.trim();
+    return value ? value.slice(0, MAX_FORM_ID) : undefined;
+  }
+
   // The full fill lifecycle (PLAN §1): introspect → disable affected fields under
   // the shimmer → POST /api/fill → apply the FillPlan (readback-or-revert per
   // field) → restore effects + report. The popover already set itself busy when
@@ -212,11 +235,16 @@ export class FieldFoxElement extends HTMLElement {
       contextText?: string;
       images?: RequestImage[];
     };
+    const { formContext, formId } = this;
     const request: FillRequest = {
       schemaVersion: WIRE_SCHEMA_VERSION,
       formSchema: schema,
       contextText: detail.contextText ?? '',
       images: detail.images ?? [],
+      // Optional form-level inputs are spread in only when present, so absent
+      // attributes never ship as empty strings (both fields are optional).
+      ...(formContext !== undefined && { formContext }),
+      ...(formId !== undefined && { formId }),
     };
 
     const controller = new AbortController();

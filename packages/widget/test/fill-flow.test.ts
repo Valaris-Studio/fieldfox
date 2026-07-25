@@ -146,3 +146,64 @@ test('the wire schemaVersion matches @fieldfox/shared (drift guard for the local
   const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
   expect(body.schemaVersion).toBe(SCHEMA_VERSION);
 });
+
+// G2: form-level embedder inputs. The `context` / `form-id` attributes ride
+// every FillRequest as `formContext` / `formId` (PLAN §0 embedder-inputs row).
+function postBody(): Record<string, unknown> {
+  return JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+}
+
+test('context and form-id attributes ride the request as formContext / formId', async () => {
+  const { el, form } = mountForm();
+  el.setAttribute('context', 'Beta cohort — waitlist priority');
+  el.setAttribute('form-id', 'signup-2026');
+  fetchSpy.mockResolvedValue(jsonResponse({ fills: [] }));
+
+  fireFill(form);
+  await flush();
+
+  const body = postBody();
+  expect(body.formContext).toBe('Beta cohort — waitlist priority');
+  expect(body.formId).toBe('signup-2026');
+});
+
+test('formContext / formId are omitted from the request when the attributes are absent', async () => {
+  const { form } = mountForm();
+  fetchSpy.mockResolvedValue(jsonResponse({ fills: [] }));
+
+  fireFill(form);
+  await flush();
+
+  const body = postBody();
+  // Optional schema fields: absent must not become "" on the wire.
+  expect('formContext' in body).toBe(false);
+  expect('formId' in body).toBe(false);
+});
+
+test('empty / whitespace-only context and form-id are treated as absent', async () => {
+  const { el, form } = mountForm();
+  el.setAttribute('context', '   ');
+  el.setAttribute('form-id', '');
+  fetchSpy.mockResolvedValue(jsonResponse({ fills: [] }));
+
+  fireFill(form);
+  await flush();
+
+  const body = postBody();
+  expect('formContext' in body).toBe(false);
+  expect('formId' in body).toBe(false);
+});
+
+test('over-cap context and form-id are truncated to the shared maxima', async () => {
+  const { el, form } = mountForm();
+  el.setAttribute('context', 'x'.repeat(2500));
+  el.setAttribute('form-id', 'f'.repeat(200));
+  fetchSpy.mockResolvedValue(jsonResponse({ fills: [] }));
+
+  fireFill(form);
+  await flush();
+
+  const body = postBody();
+  expect((body.formContext as string).length).toBe(2000);
+  expect((body.formId as string).length).toBe(128);
+});

@@ -239,3 +239,30 @@ test('leave semantics: explicit skip and plan omission both keep prior values', 
   await expect(page.locator('#tshirt-size')).toHaveValue('');
   await expect(page.locator('#interest-woodworking')).not.toBeChecked();
 });
+
+test('form-level embedder inputs: context / form-id attributes ride the POSTed FillRequest', async ({ page }) => {
+  // G2 owns the WIDGET's outbound request. `formContext` / `formId` do not reach
+  // the mock provider's /__mock/requests yet — the server only routes them into
+  // the trusted prompt lane in G3 — so the load-bearing proof is the raw
+  // widget → server POST body, captured here at the network layer. The port may
+  // be remapped by the beforeEach fetch shim, so match on the /api/fill suffix.
+  const fillBody = new Promise<Record<string, unknown>>((resolve) => {
+    page.on('request', (req) => {
+      if (req.method() === 'POST' && req.url().includes('/api/fill')) {
+        resolve(JSON.parse(req.postData() ?? '{}'));
+      }
+    });
+  });
+
+  await page.goto(PLAIN_URL);
+  await openPanelAndFill(page, 'Jane Doe, jane@doe.dev, medium shirt, afternoon.');
+
+  const body = await fillBody;
+  expect(body.formContext).toBe(
+    'Trailhead Makers workshop signup — beginners welcome, all sessions ADA accessible',
+  );
+  expect(body.formId).toBe('trailhead-workshop-signup');
+
+  // The whole flow still completes on top of the new fields.
+  await expect(ui(page).status).toContainText('Review, then submit', { timeout: 15_000 });
+});
