@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Local verification gate — replaces GitHub-hosted CI (PLAN §0 CI row, amended
+# 2026-07-24: no paid GitHub runners). Fast gates only; the e2e matrix runs per
+# card under the review policy (pnpm test:e2e).
+set -e
+cd "$(git rev-parse --show-toplevel)"
+pnpm verify
