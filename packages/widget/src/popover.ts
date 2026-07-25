@@ -23,7 +23,13 @@ export interface PopoverHandle {
   isBusy(): boolean;
   showError(message: string): void;
   // Non-error informational status — the C4 fill report ("Filled 3, left 1").
+  // A success report is the panel's "done" state, so it also minimizes the panel
+  // so the just-filled fields are visible for review (pilot-finding 5).
   showStatus(message: string): void;
+  // Collapse to a status-only strip / restore the full panel. Minimizing keeps
+  // the panel OPEN (the user can re-expand); it is not a close.
+  expand(): void;
+  isMinimized(): boolean;
   // Introspection hooks for tests / C4; not part of the day-to-day surface.
   isTrapActive(): boolean;
   destroy(): void;
@@ -79,6 +85,15 @@ const PANEL_STYLES = `
 }
 .ff-status { margin-top: 8px; min-height: 1em; font-size: 13px; }
 .ff-status.ff-error { color: #b3261e; }
+/* Done state: collapse to a title + status strip so the filled fields behind the
+   panel are visible for review (pilot-finding 5). Click anywhere on the strip to
+   re-expand. The title/status stay; the bulky intake controls hide. */
+.ff-panel.ff-minimized { cursor: pointer; }
+.ff-panel.ff-minimized .ff-textarea,
+.ff-panel.ff-minimized .ff-drop,
+.ff-panel.ff-minimized .ff-thumbs,
+.ff-panel.ff-minimized .ff-actions { display: none; }
+.ff-panel.ff-minimized .ff-status { margin-top: 4px; }
 .ff-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .ff-fill {
   padding: 8px 14px;
@@ -154,6 +169,7 @@ export function createPopover(
   const images: PanelImage[] = [];
   let open = false;
   let busy = false;
+  let minimized = false;
 
   const usePopoverApi = (): boolean =>
     typeof (panel as unknown as { showPopover?: unknown }).showPopover ===
@@ -183,16 +199,44 @@ export function createPopover(
     positionNearHost();
   }
 
+  // Minimized/done placement: dock the status strip to a viewport corner that is
+  // CLEAR of the host form, so the just-filled fields are visible for review
+  // (pilot-finding 5). Prefer the gap to the right of the form; if the form runs
+  // to the viewport edge, drop to the bottom-right corner instead.
+  function positionMinimized(): void {
+    const formRect = host.getBoundingClientRect();
+    panel.style.position = 'fixed';
+    panel.style.margin = '0';
+    const panelRect = panel.getBoundingClientRect();
+    const vh = window.innerHeight || 0;
+    const vw = window.innerWidth || 0;
+    const gapRightOfForm = vw - formRect.right;
+    if (gapRightOfForm >= panelRect.width + 16) {
+      // Beside the form, aligned to its top.
+      panel.style.left = `${vw - panelRect.width - 8}px`;
+      panel.style.top = `${Math.max(8, formRect.top)}px`;
+    } else {
+      // Bottom-right corner, below a short form / clear of a centered one.
+      panel.style.left = `${Math.max(8, vw - panelRect.width - 8)}px`;
+      panel.style.top = `${Math.max(8, vh - panelRect.height - 8)}px`;
+    }
+  }
+
   function doOpen(): void {
     if (open) return;
     open = true;
     clearStatus();
+    setMinimized(false); // every open starts in the full intake state
     if (usePopoverApi()) {
       (panel as unknown as { showPopover: () => void }).showPopover();
       positionNearHost();
     } else {
       positionFallback();
     }
+    // While open, fieldfox is the SINGLE owner of Escape (pilot-finding 5):
+    // a capture-phase document listener runs before the host's (Radix's)
+    // document handlers and before the Popover API's own light-dismiss.
+    document.addEventListener('keydown', captureEscape, true);
     // Focus the textarea so keyboard users land inside the trap immediately.
     textarea.focus();
   }
@@ -200,12 +244,26 @@ export function createPopover(
   function doClose(): void {
     if (!open) return;
     open = false;
+    document.removeEventListener('keydown', captureEscape, true);
     if (usePopoverApi()) {
       (panel as unknown as { hidePopover: () => void }).hidePopover();
     } else {
       panel.style.display = 'none';
     }
     trigger.focus();
+  }
+
+  // Capture-phase Escape owner. Runs before host document handlers; claims the
+  // key entirely (stopImmediatePropagation blocks even other document-capture
+  // listeners like Radix's; preventDefault suppresses the native Popover
+  // light-dismiss) and closes ONLY this panel. If the panel is merely minimized,
+  // Escape closes it too — one predictable Escape behavior while it is open.
+  function captureEscape(event: KeyboardEvent): void {
+    if (event.key !== 'Escape' || !open) return;
+    event.stopImmediatePropagation();
+    event.stopPropagation();
+    event.preventDefault();
+    doClose();
   }
 
   // --- Focus trap -------------------------------------------------------------
@@ -223,11 +281,9 @@ export function createPopover(
   }
 
   function onKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      doClose();
-      return;
-    }
+    // Escape is owned by the capture-phase document listener (captureEscape), so
+    // it is deliberately NOT handled here — one owner avoids a double-close and
+    // the host-dialog fight (pilot-finding 5).
     if (event.key !== 'Tab' || !trapActive()) return;
     const items = focusables();
     if (items.length === 0) return;
@@ -371,14 +427,44 @@ export function createPopover(
     );
   });
 
+  // --- Minimize (done-state review visibility) --------------------------------
+  function setMinimized(next: boolean): void {
+    minimized = next;
+    panel.classList.toggle('ff-minimized', next);
+    if (next) {
+      panel.setAttribute('title', 'Click to expand');
+    } else {
+      panel.removeAttribute('title');
+    }
+    // Reposition for the new size/role: docked away from the form when minimized,
+    // back near the host when expanded. (No-op before the panel is first opened.)
+    if (open) {
+      if (next) positionMinimized();
+      else positionNearHost();
+    }
+  }
+  function expand(): void {
+    if (minimized) setMinimized(false);
+  }
+  // A minimized panel is a status strip the user clicks to get the intake UI
+  // back. Ignore clicks while expanded (normal controls handle their own).
+  panel.addEventListener('click', () => {
+    if (minimized) expand();
+  });
+
   // --- Status + busy ----------------------------------------------------------
   function showError(message: string): void {
     status.textContent = message;
     status.classList.add('ff-error');
+    // Errors need the full panel (the user retries), so an error un-minimizes.
+    setMinimized(false);
   }
   function showStatus(message: string): void {
     status.textContent = message;
     status.classList.remove('ff-error');
+    // A success report is the done state → collapse so the filled fields behind
+    // the panel are reviewable (pilot-finding 5).
+    setMinimized(true);
   }
   function clearStatus(): void {
     status.textContent = '';
@@ -404,8 +490,13 @@ export function createPopover(
     isBusy: () => busy,
     showError,
     showStatus,
+    expand,
+    isMinimized: () => minimized,
     isTrapActive: trapActive,
     destroy(): void {
+      // Match doClose's teardown even if destroyed while open (avoid a leaked
+      // document listener firing after the panel is gone).
+      document.removeEventListener('keydown', captureEscape, true);
       panel.remove();
     },
   };

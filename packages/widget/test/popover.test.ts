@@ -122,17 +122,128 @@ test('falls back to a fixed high-z panel when showPopover is absent', () => {
 });
 
 test('Esc closes the panel and returns focus to the trigger', () => {
-  const { handle, root, trigger } = harness!;
+  const { handle, trigger } = harness!;
   handle.open();
   expect(handle.isOpen()).toBe(true);
 
-  const panel = root.querySelector('[part="panel"]') as HTMLElement;
-  panel.dispatchEvent(
-    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  // Escape is owned by the capture-phase document listener now. A real key event
+  // is composed:true and reaches the document from inside the shadow tree; the
+  // panel's own keydown no longer handles Escape.
+  document.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
   );
 
   expect(handle.isOpen()).toBe(false);
   expect(document.activeElement).toBe(trigger);
+});
+
+// --- Esc etiquette inside a host dialog (pilot-finding 5) --------------------
+// A host framework (Radix) closes its own dialog on a document-level Esc. While
+// the fieldfox panel is open it must be the SINGLE owner of Escape: intercept in
+// the capture phase (before the host's document handlers) and close ONLY the
+// panel, so the keystroke never reaches the host.
+
+test('Esc with the panel open is stopped before a host document listener sees it', () => {
+  const { handle } = harness!;
+  // Simulate Radix: a bubble-phase document listener that would close the host
+  // dialog. It must NEVER fire while the fieldfox panel owns the Escape.
+  const hostEscape = vi.fn();
+  document.addEventListener('keydown', hostEscape);
+  try {
+    handle.open();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    );
+    expect(handle.isOpen()).toBe(false); // only the fieldfox panel closed
+    expect(hostEscape).not.toHaveBeenCalled(); // host dialog never saw the key
+  } finally {
+    document.removeEventListener('keydown', hostEscape);
+  }
+});
+
+test('the capture Escape listener is removed once the panel closes (no host interception when closed)', () => {
+  const { handle } = harness!;
+  const hostEscape = vi.fn();
+  document.addEventListener('keydown', hostEscape);
+  try {
+    handle.open();
+    handle.close();
+    // Panel is closed: fieldfox no longer owns Escape, so the host handler runs.
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    );
+    expect(hostEscape).toHaveBeenCalledTimes(1);
+  } finally {
+    document.removeEventListener('keydown', hostEscape);
+  }
+});
+
+test('destroy() removes the capture Escape listener (no leak after teardown)', () => {
+  const { handle } = harness!;
+  const hostEscape = vi.fn();
+  document.addEventListener('keydown', hostEscape);
+  try {
+    handle.open();
+    handle.destroy();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    );
+    expect(hostEscape).toHaveBeenCalledTimes(1); // listener gone → host sees it
+  } finally {
+    document.removeEventListener('keydown', hostEscape);
+  }
+});
+
+// --- Review visibility after a successful fill (pilot-finding 5) -------------
+// The success report (showStatus, the sole post-fill success call from C4) must
+// collapse the panel so it stops occluding the just-filled fields; the user can
+// re-expand.
+
+test('a successful fill report minimizes the panel; the status stays visible', () => {
+  const { handle, root } = harness!;
+  handle.open();
+  expect(handle.isMinimized()).toBe(false);
+
+  handle.showStatus('Filled 3 fields, left 1.');
+
+  expect(handle.isMinimized()).toBe(true);
+  const panel = root.querySelector('[part="panel"]') as HTMLElement;
+  expect(panel.classList.contains('ff-minimized')).toBe(true);
+  // The status line the user is asked to review stays visible.
+  const status = root.querySelector('[role="status"]') as HTMLElement;
+  expect(status.textContent).toContain('Filled 3 fields, left 1.');
+  // Panel is still open (minimized ≠ closed) so re-expansion is possible.
+  expect(handle.isOpen()).toBe(true);
+});
+
+test('a minimized panel can be re-expanded', () => {
+  const { handle, root } = harness!;
+  handle.open();
+  handle.showStatus('Filled 2 fields.');
+  expect(handle.isMinimized()).toBe(true);
+
+  handle.expand();
+
+  expect(handle.isMinimized()).toBe(false);
+  const panel = root.querySelector('[part="panel"]') as HTMLElement;
+  expect(panel.classList.contains('ff-minimized')).toBe(false);
+});
+
+test('an error report does NOT minimize (the full panel stays up to retry)', () => {
+  const { handle } = harness!;
+  handle.open();
+  handle.showError('Could not fill the form. Please try again.');
+  expect(handle.isMinimized()).toBe(false);
+});
+
+test('re-opening a closed panel starts expanded', () => {
+  const { handle } = harness!;
+  handle.open();
+  handle.showStatus('Filled 1 field.');
+  expect(handle.isMinimized()).toBe(true);
+  handle.close();
+  handle.open();
+  expect(handle.isMinimized()).toBe(false);
 });
 
 test('pasting an image adds a thumbnail; the × button removes it', async () => {
