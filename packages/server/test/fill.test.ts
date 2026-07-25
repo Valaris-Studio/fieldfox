@@ -174,4 +174,35 @@ describe('POST /api/fill', () => {
     });
     expect(res.status).toBe(400);
   });
+
+  test('a valid PDF document flows through to a 200 plan', async () => {
+    const modelOut = JSON.stringify({ fills: [{ fieldId: 'f_name', action: 'set', value: 'Grace Hopper' }] });
+    const app = testApp(mockCaller(modelOut));
+    const res = await post(app, {
+      ...validRequest(),
+      documents: [{ name: 'resume.pdf', mediaType: 'application/pdf', dataUrl: 'data:application/pdf;base64,JVBER' }],
+    });
+    expect(res.status).toBe(200);
+  });
+
+  test('an oversize document dataUrl → 400 invalid_request via zod', async () => {
+    const app = testApp(mockCaller());
+    const huge = 'data:application/pdf;base64,' + 'A'.repeat(8 * 1024 * 1024);
+    const res = await post(app, {
+      ...validRequest(),
+      documents: [{ name: 'huge.pdf', mediaType: 'application/pdf', dataUrl: huge }],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_request');
+  });
+
+  test('a non-PDF document mediaType → 400 invalid_request via zod', async () => {
+    const app = testApp(mockCaller());
+    const res = await post(app, {
+      ...validRequest(),
+      documents: [{ name: 'notes.txt', mediaType: 'text/plain', dataUrl: 'data:text/plain;base64,QQ==' }],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_request');
+  });
 });

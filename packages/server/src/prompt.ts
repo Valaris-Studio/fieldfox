@@ -21,7 +21,11 @@ export interface ChatMessage {
 
 export type ChatContentPart =
   | { type: 'text'; text: string }
-  | { type: 'image_url'; image_url: { url: string } };
+  | { type: 'image_url'; image_url: { url: string } }
+  // OpenAI-compatible chat-completions file part (PDF attachments). `file_data`
+  // is the base64 data URL; `filename` is the sanitized document name. Rides the
+  // UNTRUSTED user message alongside images — document content is user-tier.
+  | { type: 'file'; file: { filename: string; file_data: string } };
 
 // Per-request random delimiter so page content cannot forge the block fence by
 // guessing it (spotlighting, MSRC 2025).
@@ -129,6 +133,13 @@ export function buildPrompt(request: PromptRequest, options: PromptOptions = {})
   const content: ChatContentPart[] = [{ type: 'text', text: userText }];
   for (const image of request.images) {
     content.push({ type: 'image_url', image_url: { url: image.dataUrl } });
+  }
+  // PDF attachments follow the images, in the SAME untrusted user turn: a
+  // document's content is user-tier, never site-owner-tier, so it must not reach
+  // the trusted author lane (OWASP LLM01). The widget already sanitized the
+  // filename; the data URL is the base64 payload the provider decodes.
+  for (const doc of request.documents ?? []) {
+    content.push({ type: 'file', file: { filename: doc.name, file_data: doc.dataUrl } });
   }
 
   if (options.repairError) {

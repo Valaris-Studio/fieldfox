@@ -1,0 +1,4 @@
+Attendee: Jane Doe
+Email: jane@doe.dev
+T-shirt size: medium
+Preferred session: afternoon

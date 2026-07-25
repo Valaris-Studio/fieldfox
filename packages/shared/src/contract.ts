@@ -5,8 +5,10 @@ import { z } from 'zod';
 // only; the zod runtime lives on the server (PLAN §0 bundle budget).
 
 // Bump on any breaking change to the shapes below. The server rejects requests
-// whose schemaVersion it cannot serve (PLAN §0, card D2).
-export const SCHEMA_VERSION = 2;
+// whose schemaVersion it cannot serve (PLAN §0, card D2). v3 adds the optional
+// `documents` field (PDF attachments) — additive, so the server serves the whole
+// {1,2,3} major set and stale v1/v2 widgets keep working.
+export const SCHEMA_VERSION = 3;
 
 const MAX_HINT = 500;
 
@@ -81,11 +83,38 @@ export const RequestImage = z.object({
 });
 export type RequestImage = z.infer<typeof RequestImage>;
 
+// Document attachments the models can read (card: accept-documents). Only PDFs
+// ride the wire — text-like formats are decoded client-side and inlined into
+// contextText's untrusted lane, so they never appear here. Kept parallel to the
+// server's image caps: max 3 files, 5MB pre-encode each.
+const MAX_DOCUMENT_NAME = 128;
+export const MAX_DOCUMENTS = 3;
+// Pre-encode byte ceiling per PDF, matching the widget-side cap and the server's
+// image byte budget (RESEARCH §6). base64 inflates by 4/3, and a data URL adds a
+// `data:application/pdf;base64,` prefix (~28 chars). Cap the whole dataUrl string
+// at the encoded size of 5MB plus generous slack for the prefix so an at-limit
+// PDF is accepted while an oversize one is rejected at the zod boundary.
+const MAX_DOCUMENT_PRE_ENCODE_BYTES = 5 * 1024 * 1024;
+const MAX_DOCUMENT_DATA_URL_LEN = Math.ceil(MAX_DOCUMENT_PRE_ENCODE_BYTES / 3) * 4 + 64;
+
+export const DocumentMediaType = z.enum(['application/pdf']);
+export type DocumentMediaType = z.infer<typeof DocumentMediaType>;
+
+export const RequestDocument = z.object({
+  name: z.string().max(MAX_DOCUMENT_NAME),
+  mediaType: DocumentMediaType,
+  dataUrl: z.string().startsWith('data:').max(MAX_DOCUMENT_DATA_URL_LEN),
+});
+export type RequestDocument = z.infer<typeof RequestDocument>;
+
 export const FillRequest = z.object({
   schemaVersion: z.literal(SCHEMA_VERSION),
   formSchema: FormSchema,
   contextText: z.string(),
   images: z.array(RequestImage).default([]),
+  // PDF attachments (card: accept-documents). Optional + defaulted like `images`
+  // so a request that omits it round-trips to []; a v1/v2 widget never sends it.
+  documents: z.array(RequestDocument).max(MAX_DOCUMENTS).default([]),
   locale: z.string().optional(),
   formContext: z.string().max(MAX_FORM_CONTEXT).optional(),
   formId: z.string().max(MAX_FORM_ID).optional(),

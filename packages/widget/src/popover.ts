@@ -1,19 +1,32 @@
-import type { RequestImage } from '@fieldfox/shared';
+import type { RequestImage, RequestDocument } from '@fieldfox/shared';
 
 // Card C3 — the input panel. Lives in the widget's OWN open shadow tree; the host
 // form is never touched (RESEARCH §4). Opens into the browser top layer via the
 // Popover API when available, falling back to a fixed high-z panel otherwise.
 //
-// Scope boundary: this card collects `{ contextText, images }` and emits
-// `fieldfox:fill`; the network call + fill executor are C4. The handle exposes
-// setBusy / showError / close so C4 can drive the panel through the `applying`
-// phase — during which the focus trap is SUSPENDED (PLAN §0 "Focus vs trap":
-// real per-field focus/blur during fill is otherwise in tension with the trap).
+// Scope boundary: this card collects `{ contextText, images, documents }` and
+// emits `fieldfox:fill`; the network call + fill executor are C4. The handle
+// exposes setBusy / showError / close so C4 can drive the panel through the
+// `applying` phase — during which the focus trap is SUSPENDED (PLAN §0 "Focus vs
+// trap": real per-field focus/blur during fill is otherwise in tension with it).
 
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB decoded, matching the server cap
 const DOWNSCALE_MAX_EDGE = 1280; // longest-side target before base64 encoding
 const VIEWPORT_MARGIN = 8; // keep the panel this many px clear of every viewport edge (matches the open-position clamp)
+
+// Document intake (card: accept-documents), only when the host opts in. PDFs
+// ride the wire's `documents` field; text-like files are decoded client-side and
+// inlined into contextText's untrusted lane, so the two have separate caps.
+const MAX_PDF_FILES = 3;
+const MAX_PDF_BYTES = 5 * 1024 * 1024; // 5MB pre-encode, matching the shared contract cap
+const MAX_TEXT_FILES = 3;
+const MAX_TEXT_CHARS = 20_000; // per text file, inlined into contextText
+const PDF_MIME = 'application/pdf';
+// Text-like formats decoded client-side. Some browsers report markdown/csv with
+// varied mime strings, so the file-extension fallback in `classifyFile` backs
+// these up.
+const TEXT_MIMES = ['text/plain', 'text/markdown', 'text/csv', 'application/json'] as const;
 
 interface Point {
   x: number;
@@ -40,6 +53,12 @@ function clampToViewport(
     x: clampAxis(pos.x, viewport.width, size.width),
     y: clampAxis(pos.y, viewport.height, size.height),
   };
+}
+
+export interface PopoverOptions {
+  // Opt-in document intake (card: accept-documents). Off by default: the intake
+  // accepts images only, exactly as before this card.
+  acceptDocuments?: boolean;
 }
 
 export interface PopoverHandle {
@@ -121,6 +140,22 @@ const PANEL_STYLES = `
   padding: 0; border: 0; border-radius: 0 0 0 6px;
   background: rgba(0,0,0,0.6); color: #fff; cursor: pointer; font-size: 13px;
 }
+/* Document attachment chips — filename + remove control, mirroring the image
+   thumbs' interaction but laid out as text rows since a PDF/text file has no
+   preview image. */
+.ff-chips { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.ff-chip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; border: 1px solid rgba(0,0,0,0.15); border-radius: 6px;
+  font-size: 12px; background: rgba(0,0,0,0.03);
+}
+.ff-chip-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ff-chip-remove {
+  flex: none; width: 18px; height: 18px; line-height: 16px;
+  padding: 0; border: 0; border-radius: 4px;
+  background: rgba(0,0,0,0.6); color: #fff; cursor: pointer; font-size: 13px;
+}
+.ff-panel.ff-minimized .ff-chips { display: none; }
 .ff-status { margin-top: 8px; min-height: 1em; font-size: 13px; }
 .ff-status.ff-error { color: #b3261e; }
 /* Done state: collapse to a title + status strip so the filled fields behind the
@@ -130,6 +165,7 @@ const PANEL_STYLES = `
 .ff-panel.ff-minimized .ff-textarea,
 .ff-panel.ff-minimized .ff-drop,
 .ff-panel.ff-minimized .ff-thumbs,
+.ff-panel.ff-minimized .ff-chips,
 .ff-panel.ff-minimized .ff-actions { display: none; }
 .ff-panel.ff-minimized .ff-status { margin-top: 4px; }
 .ff-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
@@ -146,12 +182,17 @@ interface PanelImage extends RequestImage {
   name: string;
 }
 
+// A PDF attachment kept in panel state until Fill (rides the wire's `documents`).
+type PanelDocument = RequestDocument;
+
 export function createPopover(
   shadowRoot: ShadowRoot,
   host: HTMLElement,
   trigger: HTMLElement,
+  options: PopoverOptions = {},
 ): PopoverHandle {
   ensureStyles(shadowRoot);
+  const acceptDocuments = options.acceptDocuments ?? false;
 
   const panel = document.createElement('div');
   panel.className = 'ff-panel';
@@ -175,18 +216,27 @@ export function createPopover(
   drop.className = 'ff-drop';
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
-  fileInput.accept = 'image/*';
+  // With the flag on the picker also offers PDFs + text-like formats; otherwise
+  // it stays images-only, exactly as before this card.
+  fileInput.accept = acceptDocuments
+    ? `image/*,${PDF_MIME},${TEXT_MIMES.join(',')},.md,.markdown,.csv`
+    : 'image/*';
   fileInput.multiple = true;
   fileInput.className = 'ff-file-input';
   fileInput.id = 'ff-file';
   const fileLabel = document.createElement('label');
   fileLabel.className = 'ff-file-label';
   fileLabel.htmlFor = 'ff-file';
-  fileLabel.textContent = 'add images';
+  fileLabel.textContent = acceptDocuments ? 'add images or documents' : 'add images';
   drop.append(document.createTextNode('Drop, paste, or '), fileLabel, fileInput);
 
   const thumbs = document.createElement('div');
   thumbs.className = 'ff-thumbs';
+
+  // Document attachment chips (PDF + text-like files) live in their own row so
+  // they don't disturb the image thumbnail grid.
+  const chips = document.createElement('div');
+  chips.className = 'ff-chips';
 
   const status = document.createElement('div');
   status.className = 'ff-status';
@@ -202,10 +252,14 @@ export function createPopover(
   fillButton.textContent = 'Fill form';
   actions.append(fillButton);
 
-  panel.append(title, textarea, drop, thumbs, status, actions);
+  panel.append(title, textarea, drop, thumbs, chips, status, actions);
   shadowRoot.appendChild(panel);
 
   const images: PanelImage[] = [];
+  // PDF attachments (wire) and text attachments (inlined into contextText). Kept
+  // separate because they leave the widget on different lanes.
+  const documents: PanelDocument[] = [];
+  const textAttachments: { name: string; content: string }[] = [];
   let open = false;
   let busy = false;
   let minimized = false;
@@ -476,8 +530,47 @@ export function createPopover(
     }
   }
 
+  // Routes each dropped/pasted/picked file. With the flag off, only images are
+  // accepted (unchanged behavior). With it on, PDFs ride the wire's `documents`,
+  // text-like files are decoded + inlined into contextText, and anything else
+  // (docx, etc.) surfaces a friendly panel message rather than an error state.
   async function addFiles(files: File[]): Promise<void> {
-    const incoming = files.filter((f) => f.type.startsWith('image/'));
+    if (!acceptDocuments) {
+      const imageFiles = files.filter((f) => f.type.startsWith('image/'));
+      if (imageFiles.length) await addImages(imageFiles);
+      // A non-image file with the flag off isn't accepted here — say so instead
+      // of silently dropping it (card: friendly not-accepted message). Not an
+      // error state; the panel stays usable.
+      else if (files.length) showInfo('Only images can be added here.');
+      return;
+    }
+
+    const images_: File[] = [];
+    const pdfs: File[] = [];
+    const texts: File[] = [];
+    const unsupported: File[] = [];
+    for (const file of files) {
+      switch (classifyFile(file)) {
+        case 'image': images_.push(file); break;
+        case 'pdf': pdfs.push(file); break;
+        case 'text': texts.push(file); break;
+        default: unsupported.push(file);
+      }
+    }
+
+    // Track whether any lane already surfaced a message so the unsupported hint
+    // doesn't clobber a more specific "too large" / cap warning.
+    const beforeStatus = statusMessage();
+    if (images_.length) await addImages(images_);
+    if (pdfs.length) await addPdfs(pdfs);
+    if (texts.length) await addTextFiles(texts);
+    if (unsupported.length && statusMessage() === beforeStatus) {
+      const names = unsupported.map((f) => f.name).join(', ');
+      showInfo(`Can't read ${names}. Supported: images, PDF, and text files.`);
+    }
+  }
+
+  async function addImages(incoming: File[]): Promise<void> {
     if (incoming.length === 0) return;
 
     let rejectedOversize = false;
@@ -506,6 +599,48 @@ export function createPopover(
     }
   }
 
+  async function addPdfs(incoming: File[]): Promise<void> {
+    let rejectedOversize = false;
+    let hitCap = false;
+    for (const file of incoming) {
+      if (documents.length >= MAX_PDF_FILES) {
+        hitCap = true;
+        break;
+      }
+      // The 5MB cap is checked pre-encode (the raw File size), mirroring the
+      // shared contract's per-file pre-encode ceiling.
+      if (file.size > MAX_PDF_BYTES) {
+        rejectedOversize = true;
+        continue;
+      }
+      const dataUrl = await readAsDataUrl(file);
+      documents.push({ name: sanitizeFilename(file.name), mediaType: PDF_MIME, dataUrl });
+      renderDocChip(documents[documents.length - 1].name, documents, documents[documents.length - 1]);
+    }
+    if (rejectedOversize) showError('Some PDFs are too large (max 5MB each).');
+    else if (hitCap) showError(`You can add at most ${MAX_PDF_FILES} PDFs.`);
+    else clearStatus();
+  }
+
+  async function addTextFiles(incoming: File[]): Promise<void> {
+    let hitCap = false;
+    for (const file of incoming) {
+      if (textAttachments.length >= MAX_TEXT_FILES) {
+        hitCap = true;
+        break;
+      }
+      const raw = await readAsText(file);
+      // Cap per file so a huge log/CSV can't blow the request; the tail is
+      // dropped rather than rejecting the whole file.
+      const content = raw.slice(0, MAX_TEXT_CHARS);
+      const entry = { name: sanitizeFilename(file.name), content };
+      textAttachments.push(entry);
+      renderDocChip(entry.name, textAttachments, entry);
+    }
+    if (hitCap) showError(`You can add at most ${MAX_TEXT_FILES} text files.`);
+    else clearStatus();
+  }
+
   function renderThumb(image: PanelImage): void {
     const wrap = document.createElement('div');
     wrap.className = 'ff-thumb';
@@ -528,11 +663,36 @@ export function createPopover(
     thumbs.appendChild(wrap);
   }
 
+  // A document chip (PDF or text): filename + a remove control, mirroring the
+  // image thumb's add/remove pattern. `store`/`entry` are the array + element to
+  // splice on removal, so one renderer serves both attachment kinds.
+  function renderDocChip<T>(name: string, store: T[], entry: T): void {
+    const chip = document.createElement('div');
+    chip.className = 'ff-chip';
+    chip.setAttribute('part', 'attachment');
+    const label = document.createElement('span');
+    label.className = 'ff-chip-name';
+    label.textContent = name;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'ff-chip-remove';
+    remove.setAttribute('aria-label', `Remove ${name}`);
+    remove.textContent = '×';
+    remove.addEventListener('click', () => {
+      const index = store.indexOf(entry);
+      if (index >= 0) store.splice(index, 1);
+      chip.remove();
+      clearStatus();
+    });
+    chip.append(label, remove);
+    chips.appendChild(chip);
+  }
+
   // --- Wiring -----------------------------------------------------------------
   function onPaste(event: ClipboardEvent): void {
     const data = event.clipboardData;
     if (!data) return;
-    const files = collectPasteFiles(data);
+    const files = collectPasteFiles(data, acceptDocuments);
     if (files.length === 0) return;
     event.preventDefault();
     void addFiles(files);
@@ -565,8 +725,11 @@ export function createPopover(
     if (busy) return;
     setBusy(true);
     const detail = {
-      contextText: textarea.value,
+      // Text attachments are folded into the free-text lane as delimited blocks;
+      // they share the untrusted user-content tier with what the user typed.
+      contextText: withInlinedTextAttachments(textarea.value, textAttachments),
       images: images.map(({ dataUrl }): RequestImage => ({ dataUrl })),
+      documents: documents.map((d): RequestDocument => ({ ...d })),
     };
     host.dispatchEvent(
       new CustomEvent('fieldfox:fill', { detail, bubbles: true, composed: true }),
@@ -614,6 +777,16 @@ export function createPopover(
     // the panel are reviewable (pilot-finding 5).
     setMinimized(true);
   }
+  // A non-error, non-collapsing note (e.g. an unsupported-file type). Not an
+  // error state — the panel stays exactly as it is (card: friendly inline
+  // message, not an error state).
+  function showInfo(message: string): void {
+    status.textContent = message;
+    status.classList.remove('ff-error');
+  }
+  function statusMessage(): string {
+    return status.textContent ?? '';
+  }
   function clearStatus(): void {
     status.textContent = '';
     status.classList.remove('ff-error');
@@ -625,6 +798,9 @@ export function createPopover(
     fileInput.disabled = next;
     fillButton.disabled = next;
     thumbs
+      .querySelectorAll<HTMLButtonElement>('button')
+      .forEach((b) => (b.disabled = next));
+    chips
       .querySelectorAll<HTMLButtonElement>('button')
       .forEach((b) => (b.disabled = next));
     panel.setAttribute('aria-busy', String(next));
@@ -660,15 +836,68 @@ function ensureStyles(shadowRoot: ShadowRoot): void {
 }
 
 // clipboardData exposes both `files` and `items`; prefer files, fall back to
-// item.getAsFile() for browsers/paths that only populate items.
-function collectPasteFiles(data: DataTransfer): File[] {
+// item.getAsFile() for browsers/paths that only populate items. When documents
+// are accepted, keep every file kind and let addFiles classify them; otherwise
+// keep the images-only behavior.
+function collectPasteFiles(data: DataTransfer, acceptDocuments: boolean): File[] {
+  const keep = (type: string): boolean => acceptDocuments || type.startsWith('image/');
   const fromFiles = data.files ? Array.from(data.files) : [];
-  if (fromFiles.length > 0) return fromFiles.filter((f) => f.type.startsWith('image/'));
+  if (fromFiles.length > 0) return fromFiles.filter((f) => keep(f.type));
   const items = data.items ? Array.from(data.items) : [];
   return items
-    .filter((it) => it.kind === 'file' && it.type.startsWith('image/'))
+    .filter((it) => it.kind === 'file' && keep(it.type))
     .map((it) => it.getAsFile())
     .filter((f): f is File => f != null);
+}
+
+type FileClass = 'image' | 'pdf' | 'text' | 'unsupported';
+
+// Classifies an intake file by mime, with an extension fallback: browsers report
+// markdown/csv inconsistently (empty type, application/octet-stream), so a
+// recognized extension rescues those the mime string misses.
+function classifyFile(file: File): FileClass {
+  const type = file.type;
+  if (type.startsWith('image/')) return 'image';
+  if (type === PDF_MIME || /\.pdf$/i.test(file.name)) return 'pdf';
+  if ((TEXT_MIMES as readonly string[]).includes(type)) return 'text';
+  if (/\.(txt|md|markdown|csv|json)$/i.test(file.name)) return 'text';
+  return 'unsupported';
+}
+
+// Strips path separators and control chars from an intake filename and caps its
+// length, so a crafted name can't smuggle a path or escape sequence into the
+// prompt / wire (the server trusts the widget-sanitized name).
+function sanitizeFilename(name: string): string {
+  const base = name.split(/[\\/]/).pop() ?? name;
+  // Strip C0 + DEL control chars a crafted name could use to break out of a
+  // fence line, then cap length.
+  // eslint-disable-next-line no-control-regex -- deliberately strip control chars
+  const cleaned = base.replace(/[\x00-\x1f\x7f]/g, '').trim();
+  return (cleaned || 'attachment').slice(0, 128);
+}
+
+function readAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+    reader.readAsText(file);
+  });
+}
+
+// Folds decoded text attachments into the free-text context as clearly fenced
+// blocks naming each file, so the model can tell the typed context from an
+// attachment and where each begins/ends. The blocks live in the SAME untrusted
+// lane as the typed text (server-side UNTRUSTED PAGE CONTENT).
+function withInlinedTextAttachments(
+  typed: string,
+  attachments: { name: string; content: string }[],
+): string {
+  if (attachments.length === 0) return typed;
+  const blocks = attachments.map(
+    (a) => `----- BEGIN ATTACHED FILE: ${a.name} -----\n${a.content}\n----- END ATTACHED FILE: ${a.name} -----`,
+  );
+  return [typed.trim(), ...blocks].filter(Boolean).join('\n\n');
 }
 
 // Returns a downscaled data URL, or null when the environment can't render a

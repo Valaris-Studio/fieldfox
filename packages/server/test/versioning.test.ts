@@ -5,9 +5,10 @@ import { resolveConfig, type GuardrailConfig } from '../src/config.js';
 import { InMemoryStore } from '../src/store.js';
 import type { ChatCompletion } from '../src/llm.js';
 
-// G3: the server serves majors {1, 2}. A v1 request (no formContext/formId,
-// schemaVersion 1) still gets a 200 FillPlan; a v2 request may carry the new
-// form-level inputs; schemaVersion 3 (and any other unsupported major) → 426.
+// The server serves majors {1, 2, 3}. A v1 request (no formContext/formId,
+// schemaVersion 1) still gets a 200 FillPlan; a v2 request may carry the
+// form-level inputs; a v3 request may carry document attachments; any major
+// outside the served set (e.g. 4, 99) → 426.
 
 const KEY = 'ffx_pk_versioningtest0000000000000000000';
 const ORIGIN = 'https://app.example';
@@ -57,7 +58,7 @@ function post(app: ReturnType<typeof createApp>, body: unknown) {
   });
 }
 
-describe('G3 version gate serves majors {1, 2}', () => {
+describe('version gate serves majors {1, 2, 3}', () => {
   test('v1 request (schemaVersion 1, no form-level fields) → 200 FillPlan', async () => {
     const app = build(recordingCaller(), baseConfig());
     const res = await post(app, baseRequest({ schemaVersion: 1 }));
@@ -66,13 +67,13 @@ describe('G3 version gate serves majors {1, 2}', () => {
     expect(Array.isArray(plan.fills)).toBe(true);
   });
 
-  test('v2 request (current SCHEMA_VERSION) → 200', async () => {
+  test('v2 request (served legacy major) → 200', async () => {
     const app = build(recordingCaller(), baseConfig());
     const res = await post(app, baseRequest({ schemaVersion: 2 }));
     expect(res.status).toBe(200);
   });
 
-  test('v2 request carrying formContext + formId → 200', async () => {
+  test('request carrying formContext + formId → 200', async () => {
     const app = build(recordingCaller(), baseConfig());
     const res = await post(
       app,
@@ -95,15 +96,32 @@ describe('G3 version gate serves majors {1, 2}', () => {
     expect((await res.json()).error).toBe('invalid_request');
   });
 
-  test('v2 request WITHOUT the new form-level fields still works', async () => {
+  test('a request WITHOUT the optional form-level / document fields still works', async () => {
     const app = build(recordingCaller(), baseConfig());
     const res = await post(app, baseRequest());
     expect(res.status).toBe(200);
   });
 
-  test('v3 request → 426 with the structured refuse', async () => {
+  test('v3 request (current SCHEMA_VERSION) → 200', async () => {
     const app = build(recordingCaller(), baseConfig());
     const res = await post(app, baseRequest({ schemaVersion: 3 }));
+    expect(res.status).toBe(200);
+  });
+
+  test('v3 request carrying a PDF document → 200', async () => {
+    const app = build(recordingCaller(), baseConfig());
+    const res = await post(
+      app,
+      baseRequest({
+        documents: [{ name: 'resume.pdf', mediaType: 'application/pdf', dataUrl: 'data:application/pdf;base64,JVBER' }],
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  test('an unsupported major (4) → 426 with the structured refuse', async () => {
+    const app = build(recordingCaller(), baseConfig());
+    const res = await post(app, baseRequest({ schemaVersion: 4 }));
     expect(res.status).toBe(426);
     const body = (await res.json()) as { error: string; serverSchemaVersion: number };
     expect(body.error).toBe('schema_version_unsupported');
@@ -115,7 +133,7 @@ describe('G3 version gate serves majors {1, 2}', () => {
     const res = await post(app, baseRequest({ schemaVersion: 99 }));
     expect(res.status).toBe(426);
     const body = (await res.json()) as { serverSchemaVersions: number[] };
-    expect(body.serverSchemaVersions).toEqual([1, 2]);
+    expect(body.serverSchemaVersions).toEqual([1, 2, 3]);
   });
 });
 

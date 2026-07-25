@@ -5,6 +5,7 @@ import {
   FillRequest,
   FillPlan,
   ModelFillPlan,
+  RequestDocument,
   fillPlanJsonSchema,
 } from '../src/index.js';
 
@@ -139,6 +140,75 @@ describe('FillRequest', () => {
         images: [{ dataUrl: 'https://evil.example/x.png' }],
       }),
     ).toThrow();
+  });
+
+  test('documents defaults to [] when absent', () => {
+    const req = FillRequest.parse({
+      schemaVersion: SCHEMA_VERSION,
+      formSchema: { fields: [] },
+      contextText: '',
+    });
+    expect(req.documents).toEqual([]);
+  });
+
+  test('a PDF document round-trips', () => {
+    const req = FillRequest.parse({
+      schemaVersion: SCHEMA_VERSION,
+      formSchema: { fields: [] },
+      contextText: '',
+      documents: [{ name: 'resume.pdf', mediaType: 'application/pdf', dataUrl: 'data:application/pdf;base64,JVBER' }],
+    });
+    expect(req.documents).toHaveLength(1);
+    expect(req.documents[0].name).toBe('resume.pdf');
+  });
+
+  test('more than 3 documents is rejected', () => {
+    const doc = { name: 'd.pdf', mediaType: 'application/pdf' as const, dataUrl: 'data:application/pdf;base64,AA' };
+    expect(() =>
+      FillRequest.parse({
+        schemaVersion: SCHEMA_VERSION,
+        formSchema: { fields: [] },
+        contextText: '',
+        documents: [doc, doc, doc, doc],
+      }),
+    ).toThrow();
+  });
+});
+
+describe('RequestDocument', () => {
+  const okDoc = {
+    name: 'resume.pdf',
+    mediaType: 'application/pdf' as const,
+    dataUrl: 'data:application/pdf;base64,JVBERi0xLjQ=',
+  };
+
+  test('a well-formed PDF document parses', () => {
+    expect(RequestDocument.parse(okDoc).mediaType).toBe('application/pdf');
+  });
+
+  test('a non-PDF mediaType is rejected (only application/pdf rides the wire)', () => {
+    expect(() => RequestDocument.parse({ ...okDoc, mediaType: 'text/plain' })).toThrow();
+  });
+
+  test('a dataUrl not starting with data: is rejected', () => {
+    expect(() => RequestDocument.parse({ ...okDoc, dataUrl: 'https://evil.example/x.pdf' })).toThrow();
+  });
+
+  test('a name over the 128-char cap is rejected', () => {
+    expect(() => RequestDocument.parse({ ...okDoc, name: 'x'.repeat(129) })).toThrow();
+  });
+
+  test('a dataUrl over the ~5MB-encoded cap is rejected', () => {
+    // ceil(5MB/3)*4 + 64 is the ceiling; well past it must fail so an oversize
+    // PDF is caught at the zod boundary rather than reaching the provider.
+    const huge = 'data:application/pdf;base64,' + 'A'.repeat(8 * 1024 * 1024);
+    expect(() => RequestDocument.parse({ ...okDoc, dataUrl: huge })).toThrow();
+  });
+
+  test('a dataUrl at the encoded 5MB size is accepted', () => {
+    // 5MB → ceil(5MB/3)*4 base64 chars; within the cap (which adds 64 slack).
+    const atCap = 'data:application/pdf;base64,' + 'A'.repeat(Math.ceil((5 * 1024 * 1024) / 3) * 4);
+    expect(() => RequestDocument.parse({ ...okDoc, dataUrl: atCap })).not.toThrow();
   });
 });
 

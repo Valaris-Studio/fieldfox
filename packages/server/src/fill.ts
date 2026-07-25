@@ -23,12 +23,12 @@ import { consoleMetaLogger, type MetaLogger } from './log.js';
 // clean → respond. The LLM caller is injected so tests run with no network and
 // no API key (PLAN §D1).
 
-// Shared's FillRequest is the single v2 source of truth — its schemaVersion is
-// pinned to the literal SCHEMA_VERSION (2). To serve a v1 widget too (PLAN §0
-// version-skew row) the server accepts any served MAJOR here, WITHOUT touching
-// shared. Everything else about the request shape stays exactly shared's. The
-// guardrail middleware already rejected unsupported majors with a 426, so this
-// union only needs to admit the served set.
+// Shared's FillRequest is the single current source of truth — its schemaVersion
+// is pinned to the literal SCHEMA_VERSION (3). To serve older-major widgets too
+// (PLAN §0 version-skew row) the server accepts any served MAJOR here, WITHOUT
+// touching shared. Everything else about the request shape stays exactly
+// shared's. The guardrail middleware already rejected unsupported majors with a
+// 426, so this union only needs to admit the served set.
 const AcceptedFillRequest = FillRequest.extend({
   schemaVersion: z
     .number()

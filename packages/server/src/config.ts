@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { SCHEMA_VERSION } from '@fieldfox/shared';
 
 // The set of MAJOR schemaVersions this server serves. The current shared
-// contract is v2; a stale v1 widget on a CDN keeps working during the migration
+// contract is v3; stale v1/v2 widgets on a CDN keep working during the migration
 // window (PLAN §0 version-skew row). Any major outside this set → 426.
-export const SUPPORTED_SCHEMA_VERSIONS = [1, SCHEMA_VERSION] as const;
+export const SUPPORTED_SCHEMA_VERSIONS = [1, 2, SCHEMA_VERSION] as const;
 
 // Per-form policy overrides keyed by the opaque `formId` a request may carry
 // (PLAN §0 "Form-level embedder inputs": model override first, validations
@@ -59,8 +59,8 @@ export const GuardrailConfig = z.object({
   // guard state a deployer can wire without a code change).
   modelAllowlist: z.array(z.string()).optional(),
   // The MAJOR schemaVersions this server serves. A request whose major is not in
-  // this set → 426 (PLAN §0 version-skew policy). Defaults to {1, 2} so a stale
-  // v1 widget keeps working alongside the current v2 contract.
+  // this set → 426 (PLAN §0 version-skew policy). Defaults to {1, 2, 3} so stale
+  // v1/v2 widgets keep working alongside the current v3 contract.
   supportedSchemaVersions: z.array(z.number().int().positive()).default([...SUPPORTED_SCHEMA_VERSIONS]),
   // Optional per-formId policy overrides. When a request's formId matches a key,
   // its policy (currently just `model`) applies to that request (PLAN §0 G3).

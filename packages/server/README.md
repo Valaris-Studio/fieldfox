@@ -42,12 +42,12 @@ token budget.
 
 ### Schema-version compatibility
 
-The server serves a **set of major `schemaVersion`s** (currently `{1, 2}`), so a
-CDN-pinned widget on an older major keeps working while the current contract is
-`SCHEMA_VERSION = 2` (PLAN §0 version-skew row). A request whose major is not in
+The server serves a **set of major `schemaVersion`s** (currently `{1, 2, 3}`), so
+a CDN-pinned widget on an older major keeps working while the current contract is
+`SCHEMA_VERSION = 3` (PLAN §0 version-skew row). A request whose major is not in
 the served set is refused with `426 schema_version_unsupported`; the refuse
 payload reports both the max served major (`serverSchemaVersion`) and the full
-served set (`serverSchemaVersions`). The served set defaults to `{1, 2}` and is
+served set (`serverSchemaVersions`). The served set defaults to `{1, 2, 3}` and is
 not currently env-configurable; it is a `GuardrailConfig.supportedSchemaVersions`
 field for programmatic embedders.
 

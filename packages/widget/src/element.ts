@@ -1,4 +1,4 @@
-import type { FillRequest, RequestImage } from '@fieldfox/shared';
+import type { FillRequest, RequestImage, RequestDocument } from '@fieldfox/shared';
 import { createTrigger, type TriggerHandle } from './trigger.js';
 import { introspectForms, type IntrospectionResult } from './introspect.js';
 import { createPopover, type PopoverHandle } from './popover.js';
@@ -29,7 +29,7 @@ const DEFAULT_ENDPOINT = '/api/fill';
 // literal: value-importing it from shared would pull that package's zod runtime
 // (~20KB gzip) into the eager bundle and blow the 35KB budget (PLAN §0 "widget
 // imports shared TYPES, not zod runtime"; RESEARCH §4 top risk #3).
-const WIRE_SCHEMA_VERSION = 2;
+const WIRE_SCHEMA_VERSION = 3;
 
 // Caps for the form-level embedder inputs, mirrored locally from the shared
 // contract's MAX_FORM_CONTEXT / MAX_FORM_ID (same zod-free-bundle reasoning as
@@ -106,7 +106,7 @@ export class FieldFoxElement extends HTMLElement {
     void this.runFill(event as CustomEvent);
   };
 
-  static readonly observedAttributes = ['target', 'endpoint', 'context', 'form-id'];
+  static readonly observedAttributes = ['target', 'endpoint', 'context', 'form-id', 'accept-documents'];
 
   constructor() {
     super();
@@ -130,8 +130,10 @@ export class FieldFoxElement extends HTMLElement {
 
   attributeChangedCallback(name: string): void {
     // `context` / `form-id` are read fresh when a request is built, so a change
-    // needs no re-mount. Only the mount-shaping attributes force a re-resolve.
-    if (name !== 'target' && name !== 'endpoint') return;
+    // needs no re-mount. `accept-documents` shapes the popover's intake config,
+    // which is fixed at creation time, so a toggle re-creates it alongside the
+    // mount-shaping attributes.
+    if (name !== 'target' && name !== 'endpoint' && name !== 'accept-documents') return;
     if (this.isConnected && this.trigger) {
       this.disconnectedCallback();
       this.mount();
@@ -175,7 +177,9 @@ export class FieldFoxElement extends HTMLElement {
     const anchor = this.anchor;
     this.boundAnchor = anchor;
     this.trigger = createTrigger(shadow, anchor, () => this.openPanel());
-    this.popoverPanel = createPopover(shadow, anchor, this.trigger.button);
+    this.popoverPanel = createPopover(shadow, anchor, this.trigger.button, {
+      acceptDocuments: this.acceptDocuments,
+    });
     // The popover dispatches `fieldfox:fill` on the anchor (the form in
     // target-mode is a sibling, not a descendant, so bubbling alone can't reach
     // us — listen on the anchor directly).
@@ -295,6 +299,15 @@ export class FieldFoxElement extends HTMLElement {
     return value ? value.slice(0, MAX_FORM_ID) : undefined;
   }
 
+  // Opt-in document intake (card: accept-documents). A bare `accept-documents`
+  // attribute (or any non-"false" value) turns on PDF + text-like attachments in
+  // the popover; default off means zero behavior change for hosts that omit it.
+  // Named disjoint from the attribute for the same React 19 reason as the
+  // accessors above (`'accept-documents' in el` must stay false).
+  private get acceptDocuments(): boolean {
+    return this.hasAttribute('accept-documents') && this.getAttribute('accept-documents') !== 'false';
+  }
+
   // The full fill lifecycle (PLAN §1): introspect → disable affected fields +
   // mount the border-tracer overlay → POST /api/fill → apply the FillPlan
   // (readback-or-revert per field) → restore effects + report. The popover already
@@ -316,13 +329,18 @@ export class FieldFoxElement extends HTMLElement {
     const detail = (event.detail ?? {}) as {
       contextText?: string;
       images?: RequestImage[];
+      documents?: RequestDocument[];
     };
     const { formContext, formId } = this;
+    // Text-like attachments are already inlined into contextText by the popover;
+    // only PDFs ride the wire's `documents` field. Sent like `images` — always
+    // present, empty when the flag is off or no PDF was attached (a v3 default).
     const request: FillRequest = {
       schemaVersion: WIRE_SCHEMA_VERSION,
       formSchema: schema,
       contextText: detail.contextText ?? '',
       images: detail.images ?? [],
+      documents: detail.documents ?? [],
       // Optional form-level inputs are spread in only when present, so absent
       // attributes never ship as empty strings (both fields are optional).
       ...(formContext !== undefined && { formContext }),

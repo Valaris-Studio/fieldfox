@@ -143,9 +143,9 @@ test('a 426 schema_version_unsupported refusal shows the specific "update the sn
     jsonResponse(
       {
         error: 'schema_version_unsupported',
-        serverSchemaVersion: 2,
-        serverSchemaVersions: [1, 2],
-        message: 'This fieldfox server serves schemaVersion(s) 1, 2; the widget must be updated.',
+        serverSchemaVersion: 3,
+        serverSchemaVersions: [1, 2, 3],
+        message: 'This fieldfox server serves schemaVersion(s) 1, 2, 3; the widget must be updated.',
       },
       426,
     ),
@@ -282,4 +282,33 @@ test('fill runs end to end on a form-less target container (pilot finding 1)', a
 
   expect(fetchSpy).toHaveBeenCalledOnce();
   expect(org.value).toBe('Grupo Andino');
+});
+
+// Card: accept-documents. The wire always carries a `documents` array (v3
+// default []); when the popover emits documents in the event detail, they ride
+// the POSTed FillRequest unchanged.
+test('the wire carries an empty documents array by default (v3)', async () => {
+  const { form } = mountForm();
+  fetchSpy.mockResolvedValue(jsonResponse({ fills: [] }));
+  fireFill(form);
+  await flush();
+  const body = postBody();
+  expect(body.documents).toEqual([]);
+});
+
+test('documents in the fill event detail ride the POSTed request', async () => {
+  const { form } = mountForm();
+  fetchSpy.mockResolvedValue(jsonResponse({ fills: [] }));
+  const doc = { name: 'resume.pdf', mediaType: 'application/pdf', dataUrl: 'data:application/pdf;base64,JVBER' };
+  form.dispatchEvent(
+    new CustomEvent('fieldfox:fill', {
+      detail: { contextText: 'see attached', images: [], documents: [doc] },
+      bubbles: true,
+      composed: true,
+    }),
+  );
+  await flush();
+  const body = postBody();
+  expect(body.documents).toEqual([doc]);
+  expect(body.schemaVersion).toBe(3);
 });

@@ -87,6 +87,32 @@ describe('buildPrompt two-lane segregation', () => {
     expect(parts.some((p) => p.type === 'image_url')).toBe(true);
   });
 
+  test('PDF documents become file content parts in the untrusted user message', () => {
+    const req = baseRequest({
+      documents: [{ name: 'resume.pdf', mediaType: 'application/pdf', dataUrl: 'data:application/pdf;base64,JVBER' }],
+    });
+    const user = buildPrompt(req).find((m) => m.role === 'user')!;
+    const parts = user.content as Array<{ type: string; file?: { filename: string; file_data: string } }>;
+    const filePart = parts.find((p) => p.type === 'file');
+    expect(filePart).toBeDefined();
+    // OpenAI-compatible chat-completions file part shape.
+    expect(filePart!.file!.filename).toBe('resume.pdf');
+    expect(filePart!.file!.file_data).toBe('data:application/pdf;base64,JVBER');
+  });
+
+  test('file parts follow the image parts (documents after images)', () => {
+    const req = baseRequest({
+      images: [{ dataUrl: 'data:image/png;base64,AAAA' }],
+      documents: [{ name: 'a.pdf', mediaType: 'application/pdf', dataUrl: 'data:application/pdf;base64,BBBB' }],
+    });
+    const user = buildPrompt(req).find((m) => m.role === 'user')!;
+    const parts = user.content as Array<{ type: string }>;
+    const imageIdx = parts.findIndex((p) => p.type === 'image_url');
+    const fileIdx = parts.findIndex((p) => p.type === 'file');
+    expect(imageIdx).toBeGreaterThanOrEqual(0);
+    expect(fileIdx).toBeGreaterThan(imageIdx);
+  });
+
   test('rung-2 inlineSchema puts literal "JSON" in the system prompt', () => {
     const [system] = buildPrompt(baseRequest(), { inlineSchema: { type: 'object' } });
     expect(String(system.content)).toContain('JSON');

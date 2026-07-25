@@ -194,7 +194,7 @@ test('embed attribute names never exist as element properties (React 19 property
   // React 19 sets a JSX attr as a PROPERTY when `name in el`; a getter-only
   // property then throws and unmounts the host app (e2e finding #1).
   const el = document.createElement('field-fox');
-  for (const attr of ['target', 'endpoint', 'site-key', 'context', 'form-id']) {
+  for (const attr of ['target', 'endpoint', 'site-key', 'context', 'form-id', 'accept-documents']) {
     expect(attr in el, `'${attr}' must not be an element property`).toBe(false);
   }
 });

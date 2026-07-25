@@ -6,6 +6,8 @@ export {
   FormField,
   FormSchema,
   RequestImage,
+  DocumentMediaType,
+  RequestDocument,
   FillRequest,
   FillAction,
   Fill,
