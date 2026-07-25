@@ -20,16 +20,16 @@
 // uniformly-accelerated animation on both engines.
 //
 // LAYERING (load-bearing): the band mask and the spinning wheel live on
-// DIFFERENT elements. Each visible layer is an overlay-sized FRAME (inset:0)
-// masked to a perimeter band via the padding + content-box `mask-composite`
-// trick (standard `exclude` + the legacy `-webkit-mask-composite: xor` alias,
-// both understood by Safari 15.4+); the wheel is the frame's oversized ::before,
+// DIFFERENT elements. The ring is an overlay-sized FRAME (inset:0) masked to a
+// perimeter band via the padding + content-box `mask-composite` trick
+// (standard `exclude` + the legacy `-webkit-mask-composite: xor` alias, both
+// understood by Safari 15.4+); the wheel is the frame's oversized ::before,
 // and the frame's mask clips everything it paints down to the band. Masking the
 // WHEEL itself would carve the band at the wheel's own edge — 250%-sized, that
 // edge lies entirely outside the overlay box and nothing renders at all.
 //
-// prefers-reduced-motion: reduce → the rotation is suppressed and a static soft
-// glow border is shown instead (still communicates "in progress", no motion).
+// prefers-reduced-motion: reduce → the rotation is suppressed and a static
+// accent border is shown instead (still communicates "in progress", no motion).
 
 const STYLE_MARKER = 'data-ff-effect';
 const OVERLAY_CLASS = 'ff-inflight-overlay';
@@ -38,14 +38,10 @@ const OVERLAY_PART = 'inflight-overlay';
 // tracer now carries the "working" signal, the fields just recede a touch.
 const DIM_CLASS = 'ff-fill-dim';
 
-// Corner rounding + band thickness of the tracer ring, and how far the light's
-// soft glow bleeds. Named so the geometry reads without hunting through the CSS.
-// GLOW_BAND_PX is a wider mask band than the crisp ring so the blurred glow reads
-// as a soft halo hugging the perimeter — never a wedge sweeping the form interior.
+// Corner rounding + band thickness of the tracer ring. The ring is the WHOLE
+// effect: no blurred glow layer — a halo widens the line and reads as overload.
 const RING_RADIUS_PX = 12;
 const RING_BAND_PX = 2;
-const GLOW_BAND_PX = RING_BAND_PX * 3;
-const GLOW_BLUR_PX = 6;
 
 // The dim is injected into document.head for the SAME reason the shimmer was:
 // the affected fields live in the HOST's LIGHT DOM, which a shadow-root
@@ -176,14 +172,12 @@ function mountTracerOverlay(shadowRoot: ShadowRoot, anchor: HTMLElement): () => 
   };
 }
 
-// Two stacked band FRAMES inside the fixed overlay box (glow first = behind):
-//   .ff-tracer-glow — wide band, blurred wheel: the soft halo
-//   .ff-tracer-ring — thin band, crisp wheel: the traveling light itself
-// Each frame is masked to its perimeter band; its ::before is the spinning conic
-// wheel whose paint the frame's mask clips down to that band (see the LAYERING
-// header note for why the mask must be on the frame, never the wheel).
+// One band FRAME inside the fixed overlay box: a thin band with a crisp wheel —
+// the traveling light itself. The frame is masked to its perimeter band; its
+// ::before is the spinning conic wheel whose paint the frame's mask clips down
+// to that band (see the LAYERING header note for why the mask must be on the
+// frame, never the wheel).
 const TRACER_MARKUP = `
-<div class="ff-tracer-glow"></div>
 <div class="ff-tracer-ring"></div>`;
 
 // Scoped to the tracer subtree only: this <style> lives in the shadow tree, so a
@@ -200,14 +194,14 @@ const TRACER_CSS = `
   /* top/left/width/height set inline from the anchor rect. */
 }
 
-/* Band frames: overlay-sized, masked so ONLY the perimeter band paints. The
-   padding sets each band's thickness; content-box minus full-box under
+/* Band frame: overlay-sized, masked so ONLY the perimeter band paints. The
+   padding sets the band's thickness; content-box minus full-box under
    mask-composite exclude/xor leaves exactly that padding band. overflow:hidden
    is a backstop so the oversized wheel cannot spill even without mask support. */
-.ff-tracer-ring,
-.ff-tracer-glow {
+.ff-tracer-ring {
   position: absolute;
   inset: 0;
+  padding: ${RING_BAND_PX}px;
   border-radius: ${RING_RADIUS_PX}px;
   overflow: hidden;
   -webkit-mask:
@@ -219,18 +213,15 @@ const TRACER_CSS = `
   -webkit-mask-composite: xor;
   mask-composite: exclude;
 }
-.ff-tracer-ring { padding: ${RING_BAND_PX}px; }
-.ff-tracer-glow { padding: ${GLOW_BAND_PX}px; }
 
 /* The spinning wheel: a comet — long faint tail rising through the brand orange
-   to a white head, sharp cutoff past the head so it reads as a light LEADING
-   clockwise around the border. Stop angles are strictly increasing (conic stops
-   never wrap past 360; out-of-order stops clamp and flatten the arc). 250%-sized
-   and centered so no rotation angle of the rectangular wheel exposes a bare
-   corner of the band (200% is marginal on tall forms — half-diagonal exceeds the
-   inscribed radius). */
-.ff-tracer-ring::before,
-.ff-tracer-glow::before {
+   to a saturated warm-orange head, sharp cutoff past the head so it reads as a
+   light LEADING clockwise around the border. Stop angles are strictly increasing
+   (conic stops never wrap past 360; out-of-order stops clamp and flatten the
+   arc). 250%-sized and centered so no rotation angle of the rectangular wheel
+   exposes a bare corner of the band (200% is marginal on tall forms —
+   half-diagonal exceeds the inscribed radius). */
+.ff-tracer-ring::before {
   content: '';
   position: absolute;
   top: -75%;
@@ -252,22 +243,16 @@ const TRACER_CSS = `
   );
   animation: ff-tracer-spin 2.4s linear infinite;
 }
-.ff-tracer-glow::before {
-  filter: blur(${GLOW_BLUR_PX}px);
-  opacity: 0.5;
-}
 
 @keyframes ff-tracer-spin {
   to { transform: rotate(360deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* No travel. Hide the wheels and paint the masked frames directly — a static
-     accent edge plus a soft uniform halo, band-only, no tint on the form
-     interior, no motion. Still reads as "working". */
-  .ff-tracer-ring::before,
-  .ff-tracer-glow::before { display: none; }
+  /* No travel. Hide the wheel and paint the masked frame directly — a static
+     accent edge, band-only, no tint on the form interior, no motion. Still
+     reads as "working". */
+  .ff-tracer-ring::before { display: none; }
   .ff-tracer-ring { background: rgba(226, 98, 44, 0.22); }
-  .ff-tracer-glow { background: rgba(226, 98, 44, 0.09); }
 }
 `;

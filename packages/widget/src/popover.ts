@@ -122,10 +122,18 @@ const PANEL_STYLES = `
 .ff-title {
   flex: 1; margin: 0; font-size: 14px; font-weight: 600;
   cursor: grab; user-select: none; touch-action: none;
+  /* Faint dot grid = drag affordance: the cursor alone doesn't signal the
+     handle. Dots sit behind the title text, so they stay near-invisible
+     (1px at 10% black) to keep it readable. */
+  padding: 2px 4px;
+  border-radius: 4px;
+  background-image: radial-gradient(rgba(0, 0, 0, 0.1) 1px, transparent 1.5px);
+  background-size: 6px 6px;
 }
 .ff-panel.ff-dragging .ff-title { cursor: grabbing; }
-/* A minimized strip is click-to-expand, so its header is not a drag handle. */
-.ff-panel.ff-minimized .ff-title { cursor: pointer; }
+/* A minimized strip is click-to-expand, so its header is not a drag handle —
+   no grab cursor, no drag-affordance dots. */
+.ff-panel.ff-minimized .ff-title { cursor: pointer; background-image: none; }
 /* Minimal chromeless close: no background/border, just the glyph with a subtle
    hover. Aligned to the header top-right, hidden in the minimized strip state. */
 .ff-close {
