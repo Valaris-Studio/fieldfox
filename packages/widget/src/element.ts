@@ -85,6 +85,14 @@ export class FieldFoxElement extends HTMLElement {
   // so a form-less page still fills instead of walking the empty widget host
   // (pilot finding 1). Null in wrapping-mode or when a form was found.
   private formlessRoot: HTMLElement | null = null;
+  // Target-mode only: watches the document so we react when the host removes the
+  // resolved target (orphaned trigger/panel — pilot finding 4) or an SPA swaps a
+  // new element under the same selector (re-anchor). Lives for the whole mounted
+  // lifetime — a removal does NOT disconnect it, so a later re-add re-binds.
+  private targetObserver: MutationObserver | null = null;
+  // The element the trigger/panel are currently bound to; lets the observer tell
+  // a stale binding (removed or replaced) from a still-valid one.
+  private boundAnchor: HTMLElement | null = null;
 
   // In-flight fill: the AbortController cancels the network call and the restore
   // fn reverts the disable/shimmer effect. Both are cleared when the fill settles.
@@ -112,12 +120,9 @@ export class FieldFoxElement extends HTMLElement {
 
   disconnectedCallback(): void {
     this.abortFill();
-    this.fillListenerTarget?.removeEventListener('fieldfox:fill', this.onFillRequest);
-    this.fillListenerTarget = null;
-    this.trigger?.destroy();
-    this.trigger = null;
-    this.popoverPanel?.destroy();
-    this.popoverPanel = null;
+    this.unbindFromAnchor();
+    this.targetObserver?.disconnect();
+    this.targetObserver = null;
     this.forms.length = 0;
     this.formlessRoot = null;
   }
@@ -156,13 +161,70 @@ export class FieldFoxElement extends HTMLElement {
     }
 
     this.discoverForms();
-    this.trigger = createTrigger(shadow, this.anchor, () => this.openPanel());
-    this.popoverPanel = createPopover(shadow, this.anchor, this.trigger.button);
+    this.bindToAnchor();
+    this.observeTarget();
+  }
+
+  // Creates the trigger + popover against the current anchor and binds the fill
+  // listener. Split out from mount() so a target replacement can re-bind without
+  // tearing down the target observer (which must outlive individual bindings).
+  private bindToAnchor(): void {
+    const shadow = this.shadowRoot;
+    if (!shadow) return;
+    const anchor = this.anchor;
+    this.boundAnchor = anchor;
+    this.trigger = createTrigger(shadow, anchor, () => this.openPanel());
+    this.popoverPanel = createPopover(shadow, anchor, this.trigger.button);
     // The popover dispatches `fieldfox:fill` on the anchor (the form in
     // target-mode is a sibling, not a descendant, so bubbling alone can't reach
     // us — listen on the anchor directly).
-    this.fillListenerTarget = this.anchor;
+    this.fillListenerTarget = anchor;
     this.fillListenerTarget.addEventListener('fieldfox:fill', this.onFillRequest);
+  }
+
+  // Destroys the trigger + popover and detaches the fill listener. Leaves the
+  // target observer and discovery state alone — the caller decides those.
+  private unbindFromAnchor(): void {
+    this.fillListenerTarget?.removeEventListener('fieldfox:fill', this.onFillRequest);
+    this.fillListenerTarget = null;
+    this.trigger?.destroy();
+    this.trigger = null;
+    this.popoverPanel?.destroy();
+    this.popoverPanel = null;
+    this.boundAnchor = null;
+  }
+
+  // In target-mode, watch the document for the resolved target being removed or
+  // replaced. Cheap: childList+subtree fires only on structural changes, and the
+  // handler bails immediately unless the current binding is actually stale.
+  private observeTarget(): void {
+    if (this.targetObserver) return; // already watching
+    if (typeof MutationObserver === 'undefined') return;
+    if (!this.getAttribute('target')) return; // wrapping-mode has no selector
+    this.targetObserver = new MutationObserver(() => this.handleTargetMutation());
+    this.targetObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
+  }
+
+  // A structural DOM change happened somewhere. Re-resolve the target selector
+  // and reconcile: gone → tear the orphaned UI down (finding 4); a different node
+  // under the same selector → re-anchor to it (SPA re-render); unchanged → no-op.
+  private handleTargetMutation(): void {
+    if (!this.isConnected) return;
+    this.discoverForms();
+    const resolved = this.anchor === this ? null : this.anchor;
+
+    if (resolved === this.boundAnchor) return; // still the same live target
+
+    // Supersede any in-flight fill; the fields it touched may be gone, but the
+    // restore is reference-based and idempotent, so this never throws.
+    this.abortFill();
+    this.unbindFromAnchor();
+    // Re-bind only when the selector resolves to a real element; a bare removal
+    // leaves the UI down but keeps the observer running for a later re-add.
+    if (resolved) this.bindToAnchor();
   }
 
   private discoverForms(): void {

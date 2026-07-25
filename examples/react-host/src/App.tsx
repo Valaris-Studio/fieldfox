@@ -23,6 +23,9 @@ export function App() {
     defaultValues: { name: '', email: '', role: '', startDate: '', remote: false, bio: '' },
   });
   const [submitted, setSubmitted] = useState<Profile | null>(null);
+  // Dev-only: lets the e2e unmount/remount the target form under a live
+  // <field-fox> to exercise orphan-cleanup + re-anchor (pilot finding 4).
+  const [formMounted, setFormMounted] = useState(true);
 
   return (
     <main>
@@ -31,6 +34,11 @@ export function App() {
         react-hook-form host — fieldfox fills straight through RHF-registered inputs.
       </p>
 
+      <button type="button" id="toggle-form" onClick={() => setFormMounted((on) => !on)}>
+        {formMounted ? 'Unmount form' : 'Mount form'}
+      </button>
+
+      {formMounted && (
       <form id="profile-form" onSubmit={handleSubmit((data) => setSubmitted(data))} noValidate>
         <label htmlFor="name">Full name</label>
         <input
@@ -82,6 +90,7 @@ export function App() {
 
         <button type="submit">Save profile</button>
       </form>
+      )}
 
       {submitted && <pre id="submitted-json">{JSON.stringify(submitted, null, 2)}</pre>}
 

@@ -134,6 +134,62 @@ test('disconnecting removes the trigger and disconnects its observers', () => {
   expect(intersectionDisconnect).toHaveBeenCalled();
 });
 
+// MutationObserver callbacks run on a microtask, so tests flush after mutating.
+const flushObserver = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+test('target removal: closes the panel, hides the trigger, drops the orphaned UI', async () => {
+  document.body.innerHTML = `
+    <form id="dialog"><input name="title" /></form>
+    <field-fox target="#dialog"></field-fox>`;
+  const el = document.querySelector('field-fox') as FieldFoxElement;
+
+  // Open the panel so we can prove it gets closed on removal.
+  el.shadowRoot!.querySelector('button')!.click();
+  expect(el.panel?.isOpen()).toBe(true);
+
+  // The host tears the target form out of the DOM (e.g. dialog closed).
+  document.getElementById('dialog')!.remove();
+  await flushObserver();
+
+  // No orphaned trigger, and the panel is no longer open (pilot finding 4).
+  expect(el.shadowRoot!.querySelector('button')).toBeNull();
+  expect(el.panel?.isOpen() ?? false).toBe(false);
+});
+
+test('target replacement: re-resolves the selector and re-anchors to the new element', async () => {
+  document.body.innerHTML = `
+    <div id="mount"><form id="dialog" data-gen="1"><input name="title" /></form></div>
+    <field-fox target="#dialog"></field-fox>`;
+  const el = document.querySelector('field-fox') as FieldFoxElement;
+  const first = document.getElementById('dialog');
+  expect(el.anchorElement).toBe(first);
+
+  // SPA re-render: same selector, brand-new node swapped in.
+  document.getElementById('mount')!.innerHTML =
+    '<form id="dialog" data-gen="2"><input name="title" /></form>';
+  await flushObserver();
+
+  const second = document.getElementById('dialog');
+  expect(second).not.toBe(first);
+  expect(el.anchorElement).toBe(second);
+  expect(el.shadowRoot!.querySelector('button')).not.toBeNull(); // re-anchored, visible
+});
+
+test('disconnecting disconnects the target MutationObserver (no leak after unmount)', () => {
+  document.body.innerHTML = `
+    <form id="dialog"><input name="title" /></form>
+    <field-fox target="#dialog"></field-fox>`;
+  const el = document.querySelector('field-fox') as FieldFoxElement;
+
+  const mutationDisconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
+  // Re-mount so the spy is in place before the observer is constructed.
+  el.remove();
+  document.body.appendChild(el);
+
+  el.remove();
+  expect(mutationDisconnect).toHaveBeenCalled();
+});
+
 test('embed attribute names never exist as element properties (React 19 property-vs-attribute heuristic)', () => {
   // React 19 sets a JSX attr as a PROPERTY when `name in el`; a getter-only
   // property then throws and unmounts the host app (e2e finding #1).
