@@ -391,6 +391,12 @@ function errorMessageFor(error: unknown): string {
     if (error.errorCode === 'no_fillable_fields') {
       return 'Nothing here can be filled automatically.';
     }
+    // Major schemaVersion skew (server refuses with 426): the SITE OWNER must
+    // update the embedded snippet — nothing the end user can retry (PLAN §0
+    // version-skew row).
+    if (error.errorCode === 'schema_version_unsupported') {
+      return 'This form helper is out of date — the site needs to update its Fieldfox snippet.';
+    }
     return 'Could not fill the form. Please try again.';
   }
   return 'Something went wrong while filling the form.';

@@ -136,6 +136,33 @@ test('a 422 no_fillable_fields refusal shows the specific friendly message, not 
   expect(el.panel?.isBusy()).toBe(false);
 });
 
+test('a 426 schema_version_unsupported refusal shows the specific "update the snippet" message', async () => {
+  const { el, form, email } = mountForm();
+  // The server's real version-skew refuse shape (guardrails.ts).
+  fetchSpy.mockResolvedValue(
+    jsonResponse(
+      {
+        error: 'schema_version_unsupported',
+        serverSchemaVersion: 2,
+        serverSchemaVersions: [1, 2],
+        message: 'This fieldfox server serves schemaVersion(s) 1, 2; the widget must be updated.',
+      },
+      426,
+    ),
+  );
+
+  fireFill(form);
+  await flush();
+
+  const status = el.shadowRoot!.querySelector('[role="status"]') as HTMLElement;
+  expect(status.textContent).toBe(
+    'This form helper is out of date — the site needs to update its Fieldfox snippet.',
+  );
+  expect(status.textContent).not.toMatch(/try again/i);
+  expect(email.disabled).toBe(false);
+  expect(el.panel?.isBusy()).toBe(false);
+});
+
 test('the form is not submitted by the flow', async () => {
   const { form } = mountForm();
   const submitSpy = vi.fn();
