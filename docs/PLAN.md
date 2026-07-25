@@ -43,6 +43,8 @@ The decisions doc. Grounded in `docs/RESEARCH.md`; mirrors the Valaris board
 | **Server distribution** | Publish an npm package exporting a **Hono app/handler** plus a thin runnable entry; a documented config schema maps **multiple** site keys → `{origins, dailyBudget}` via env or a JSON config | RESEARCH §8(8) — INT-pilot needs a runnable, configured server |
 | **CI** | GitHub Actions: unit tests everywhere; the **bundle-size budget (35KB eager / 75KB ceiling) is a blocking check**; Playwright fill matrix (Chromium+WebKit) blocks merge — not just SMOKE.md steps | RESEARCH §8(5) — the size budget + fill matrix are the #1-risk early-warning system |
 | **Focus vs trap** | The popover's focus trap is **suspended during the `applying` phase**; focus is saved before the fill loop and restored after. Per-field real focus/blur is used only where a framework demonstrably needs it | RESEARCH §8(6) — real per-field focus/blur (fill) vs the panel focus trap (C3) are otherwise in tension |
+| **Form-level embedder inputs** | `<field-fox context="…" form-id="…">`: `context` is optional free text about this specific form and rides the **trusted** prompt lane (site-owner tier, same as `data-ff-*` hints, delimited separately from page content); `form-id` is an opaque ≤128-char token the server may map to per-form policies (model override first; validations later). Wire: optional `FillRequest.formContext` / `formId`; **SCHEMA_VERSION bumps to 2**; the server serves majors {1, 2} per the version-skew row | Product brief (Sebastian, 2026-07-24); trust model per RESEARCH §5 |
+| **Review policy** | Cards whose DoD is fully mechanical (tests, gates, dry-runs) are closed Review → Done by the coordinating agent once the gates pass, with evidence in the commit; only judgment cards (UX, product, spec approval) wait for a human | Sebastian, 2026-07-24, after the v1 slice verified green |
 
 **Out of scope for v1** (from the definition, reaffirmed): Android/iOS native
 SDKs; any LLM credential or direct LLM call in the client; browser-extension
@@ -229,6 +231,33 @@ Criteria / Depends On) is derived from these rows at authoring time.
   selectors** (they are the E2E fixtures). Likely files:
   `examples/plain-html/index.html`, `examples/react-host/`. Out of scope:
   publishing.
+
+### Epic G — Form-level context & config (cycle 2)
+
+- **G1 — shared: `formContext` + `formId` on FillRequest, SCHEMA_VERSION → 2**.
+  Goal: optional `formContext` (string, ≤2000) and `formId` (string, ≤128) on
+  `FillRequest`; bump `SCHEMA_VERSION` to 2. DoD: contract tests first
+  (round-trip with/without the new fields, length caps rejected); the
+  shape-change→version-bump rule (§0 version-skew row) is exercised, and the
+  drift-guard/snapshot tests updated. Likely files:
+  `packages/shared/src/contract.ts`. Out of scope: widget/server plumbing.
+- **G2 — widget: `context` / `form-id` attributes → FillRequest**. Goal: read
+  both attributes on `<field-fox>` (observedAttributes; accessor names stay
+  disjoint from attribute names — §0 embedder-inputs row and the React 19
+  property-heuristic regression test) and send them in every request;
+  `WIRE_SCHEMA_VERSION` mirror follows shared to 2. DoD: jsdom test asserting
+  the mocked request body carries both; e2e assertion via the mock provider's
+  `/__mock/requests`. Likely files: `packages/widget/src/element.ts`. Depends
+  on G1.
+- **G3 — server: accept majors {1,2}; trusted-lane `formContext`; per-`formId`
+  policy hook**. Goal: version gate serves 1 and 2 (the §0 skew policy in
+  action — a v1 widget keeps working); `formContext` joins the site-author
+  TRUSTED prompt block (capped, delimited); `formId` validated, included in
+  metadata logs, and mapped through an optional per-form config override
+  (model override first: `formPolicies: { <formId>: { model } }`). DoD:
+  contract + guardrail tests first (v1 request still 200; v3 → 426; context in
+  the trusted lane; model override applied). Likely files:
+  `packages/server/src/{prompt,config,fill,guardrails}.ts`. Depends on G1.
 
 ### Integration cards (one per production seam)
 
