@@ -92,3 +92,42 @@ describe('buildPrompt two-lane segregation', () => {
     expect(String(system.content)).toContain('JSON');
   });
 });
+
+// G3: form-level `formContext` is trusted site-author free text about the whole
+// form. It rides the SAME trusted lane as per-field data-ff-* hints, in its own
+// clearly delimited block, and must sit before the untrusted page-content block.
+const FORM_CONTEXT = 'This is the enterprise checkout; prefer business email over personal.';
+
+describe('buildPrompt trusted-lane formContext', () => {
+  test('formContext appears inside the trusted author lane, before untrusted content', () => {
+    const text = userText(buildPrompt(baseRequest({ formContext: FORM_CONTEXT })));
+
+    const authorIdx = text.indexOf('SITE-AUTHOR INSTRUCTIONS (TRUSTED)');
+    const authorEndIdx = text.indexOf('END SITE-AUTHOR INSTRUCTIONS');
+    const untrustedIdx = text.indexOf('UNTRUSTED PAGE CONTENT');
+    const contextIdx = text.indexOf(FORM_CONTEXT);
+
+    expect(authorIdx).toBeGreaterThanOrEqual(0);
+    // formContext sits within the trusted block ...
+    expect(contextIdx).toBeGreaterThan(authorIdx);
+    expect(contextIdx).toBeLessThan(authorEndIdx);
+    // ... and strictly before the untrusted page-content block.
+    expect(contextIdx).toBeLessThan(untrustedIdx);
+  });
+
+  test('formContext has its own delimited sub-block distinct from per-field hints', () => {
+    const text = userText(buildPrompt(baseRequest({ formContext: FORM_CONTEXT })));
+    // A dedicated FORM CONTEXT label separates whole-form guidance from the
+    // per-field hint block, so the two trusted signals stay distinguishable.
+    const formContextLabelIdx = text.indexOf('FORM CONTEXT');
+    expect(formContextLabelIdx).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf(FORM_CONTEXT)).toBeGreaterThan(formContextLabelIdx);
+    // The per-field trusted hint from baseRequest is still present too.
+    expect(text).toContain('Legal name as on ID');
+  });
+
+  test('absent formContext leaves no empty FORM CONTEXT block', () => {
+    const text = userText(buildPrompt(baseRequest()));
+    expect(text).not.toContain('FORM CONTEXT');
+  });
+});

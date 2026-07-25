@@ -40,6 +40,36 @@ token budget.
 | `FIELDFOX_RATE_WINDOW_MS` | `60000` | rate-limit window length |
 | `FIELDFOX_MODEL_ALLOWLIST` | _(unset)_ | comma-separated allowed model ids |
 
+### Schema-version compatibility
+
+The server serves a **set of major `schemaVersion`s** (currently `{1, 2}`), so a
+CDN-pinned widget on an older major keeps working while the current contract is
+`SCHEMA_VERSION = 2` (PLAN §0 version-skew row). A request whose major is not in
+the served set is refused with `426 schema_version_unsupported`; the refuse
+payload reports both the max served major (`serverSchemaVersion`) and the full
+served set (`serverSchemaVersions`). The served set defaults to `{1, 2}` and is
+not currently env-configurable; it is a `GuardrailConfig.supportedSchemaVersions`
+field for programmatic embedders.
+
+### Per-form policies (`formPolicies`)
+
+A request may carry an opaque `formId` (≤128 chars). `GuardrailConfig.formPolicies`
+maps a `formId` to a policy that overrides behavior for that form. Today the only
+policy field is `model`: when a request's `formId` matches, that model id is used
+for the provider call instead of the default (env `FIELDFOX_LLM_MODEL`). Shape:
+
+```jsonc
+// GuardrailConfig.formPolicies (programmatic config; no env key yet)
+{
+  "checkout-billing": { "model": "gpt-4o-mini" },
+  "support-intake":   { "model": "llama-3.1-70b" }
+}
+```
+
+An unknown/absent `formId`, or an absent `formPolicies`, uses the default model.
+`formId` also appears in the operational log metadata (opaque token, not user
+content).
+
 ### LLM provider (from card D1)
 
 | Env var | Meaning |
@@ -56,7 +86,7 @@ token budget.
 | 403 | `origin_not_allowed` | `Origin` not on the key's allowlist |
 | 413 | `too_many_images` / `image_too_large` | image caps exceeded |
 | 415 | `unsupported_image` / `unsupported_image_type` | not a data URL / disallowed mime |
-| 426 | `schema_version_unsupported` | request `schemaVersion` major not served |
+| 426 | `schema_version_unsupported` | request `schemaVersion` major not in the served set (`{1, 2}`) |
 | 429 | `rate_limited` | per-key or per-IP window exceeded |
 | 429 | `daily_budget_exceeded` | per-key daily token budget kill switch tripped |
 

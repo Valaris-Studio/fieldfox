@@ -5,6 +5,7 @@
 // card. Every log site must pass an object of this shape only.
 export interface RequestMeta {
   siteKey?: string; // the key id is operational, not user content
+  formId?: string; // opaque per-form token; operational, not user content
   event: string;
   status: number;
   fieldCount?: number;

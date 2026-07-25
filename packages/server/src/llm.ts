@@ -1,5 +1,5 @@
-import { ModelFillPlan, fillPlanJsonSchema, type FillRequest, type ModelFillPlan as ModelFillPlanType } from '@fieldfox/shared';
-import { buildPrompt, type ChatMessage } from './prompt.js';
+import { ModelFillPlan, fillPlanJsonSchema, type ModelFillPlan as ModelFillPlanType } from '@fieldfox/shared';
+import { buildPrompt, type ChatMessage, type PromptRequest } from './prompt.js';
 
 // OpenAI-compatible caller + degradation ladder (RESEARCH §3).
 //   rung 1: response_format json_schema strict:true
@@ -17,9 +17,12 @@ export interface LlmConfig {
 
 // The injectable seam. Tests override this with a mock so no network/API key is
 // needed. Returns the raw model message content; the ladder lives here.
+// `model`, when set, overrides the caller's default model for this call (the
+// per-formId policy override, PLAN §0 G3).
 export type ChatCompletion = (args: {
   messages: ChatMessage[];
   responseFormat: ResponseFormat;
+  model?: string;
 }) => Promise<string>;
 
 export type ResponseFormat =
@@ -62,12 +65,23 @@ function parseAndValidate(raw: string): ModelFillPlanType {
   return result.data;
 }
 
+export interface PlanOptions {
+  // Per-formId model override; threaded to every rung so a repair retry uses the
+  // same model as the first call.
+  model?: string;
+}
+
 // Runs the ladder against an injected completion fn and returns a re-validated
 // ModelFillPlan. `chat` is the seam the handler injects.
-export async function planWithLadder(request: FillRequest, chat: ChatCompletion): Promise<ModelFillPlanType> {
+export async function planWithLadder(
+  request: PromptRequest,
+  chat: ChatCompletion,
+  options: PlanOptions = {},
+): Promise<ModelFillPlanType> {
+  const { model } = options;
   // rung 1: strict json_schema
   try {
-    const raw = await chat({ messages: buildPrompt(request), responseFormat: strictFormat() });
+    const raw = await chat({ messages: buildPrompt(request), responseFormat: strictFormat(), model });
     return parseAndValidate(raw);
   } catch (err) {
     if (!(err instanceof ResponseFormatUnsupported)) throw err;
@@ -77,13 +91,13 @@ export async function planWithLadder(request: FillRequest, chat: ChatCompletion)
   // rung 2: json_object + inlined schema, then one repair retry on failure.
   const inlineSchema = fillPlanJsonSchema();
   const firstMessages = buildPrompt(request, { inlineSchema });
-  const firstRaw = await chat({ messages: firstMessages, responseFormat: { type: 'json_object' } });
+  const firstRaw = await chat({ messages: firstMessages, responseFormat: { type: 'json_object' }, model });
   try {
     return parseAndValidate(firstRaw);
   } catch (err) {
     if (!(err instanceof FillPlanUnrecoverable)) throw err;
     const repairMessages = buildPrompt(request, { inlineSchema, repairError: err.message });
-    const repairRaw = await chat({ messages: repairMessages, responseFormat: { type: 'json_object' } });
+    const repairRaw = await chat({ messages: repairMessages, responseFormat: { type: 'json_object' }, model });
     return parseAndValidate(repairRaw); // rung 3: a throw here reaches the handler → 502
   }
 }
@@ -103,14 +117,14 @@ export function envLlmConfig(): LlmConfig {
 }
 
 export function createChatCompletion(config: LlmConfig): ChatCompletion {
-  return async ({ messages, responseFormat }) => {
+  return async ({ messages, responseFormat, model }) => {
     const res = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${config.apiKey}`,
       },
-      body: JSON.stringify({ model: config.model, messages, response_format: responseFormat }),
+      body: JSON.stringify({ model: model ?? config.model, messages, response_format: responseFormat }),
     });
 
     if (!res.ok) {

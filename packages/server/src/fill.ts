@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { z } from 'zod';
 import {
   FillRequest,
   type Fill,
@@ -6,6 +7,7 @@ import {
   type FormField,
   type ModelFillPlan,
 } from '@fieldfox/shared';
+import { SUPPORTED_SCHEMA_VERSIONS } from './config.js';
 import {
   planWithLadder,
   createChatCompletion,
@@ -19,6 +21,21 @@ import type { RateBudgetStore } from './store.js';
 // The /api/fill handler: zod-validate → prompt+call (injected) → re-validate &
 // clean → respond. The LLM caller is injected so tests run with no network and
 // no API key (PLAN §D1).
+
+// Shared's FillRequest is the single v2 source of truth — its schemaVersion is
+// pinned to the literal SCHEMA_VERSION (2). To serve a v1 widget too (PLAN §0
+// version-skew row) the server accepts any served MAJOR here, WITHOUT touching
+// shared. Everything else about the request shape stays exactly shared's. The
+// guardrail middleware already rejected unsupported majors with a 426, so this
+// union only needs to admit the served set.
+const AcceptedFillRequest = FillRequest.extend({
+  schemaVersion: z
+    .number()
+    .int()
+    .refine((v) => SUPPORTED_SCHEMA_VERSIONS.includes(Math.trunc(v) as (typeof SUPPORTED_SCHEMA_VERSIONS)[number]), {
+      message: `schemaVersion major must be one of ${SUPPORTED_SCHEMA_VERSIONS.join(', ')}`,
+    }),
+});
 
 // Lazily built from env on first real request; tests never reach this because
 // they inject their own caller.
@@ -67,15 +84,18 @@ export function createFillHandler(injectedCaller?: ChatCompletion, store?: RateB
       return c.json({ error: 'invalid_json', message: 'request body is not valid JSON' }, 400);
     }
 
-    const parsed = FillRequest.safeParse(body);
+    const parsed = AcceptedFillRequest.safeParse(body);
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', issues: parsed.error.issues }, 400);
     }
     const request = parsed.data;
 
     const caller = resolveCaller(injectedCaller);
+    // Per-formId model override, resolved by the guardrail middleware. Undefined
+    // → the caller uses its default (env) model.
+    const modelOverride = c.get('fieldfoxModelOverride');
     try {
-      const modelPlan = await planWithLadder(request, caller);
+      const modelPlan = await planWithLadder(request, caller, { model: modelOverride });
       const plan = cleanPlan(modelPlan, request.formSchema.fields);
       // Reconcile the daily-budget charge with actual usage. planWithLadder does
       // not surface a token count yet, so pass null (estimate stands) — the seam

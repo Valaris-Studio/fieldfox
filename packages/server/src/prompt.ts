@@ -1,5 +1,10 @@
 import type { FillRequest, FormField } from '@fieldfox/shared';
 
+// The server accepts multiple schema majors (PLAN §0 G3), so the prompt reads
+// everything about a request EXCEPT its version. Relaxing schemaVersion here lets
+// a v1 request flow through unchanged; nothing below depends on the version.
+export type PromptRequest = Omit<FillRequest, 'schemaVersion'>;
+
 // Two-lane prompt (RESEARCH §6, PLAN §0). Page-derived text — labelCandidates,
 // options, placeholder, currentValue — is semi-untrusted METADATA the model
 // describes, never instructions it follows. Author hints (data-ff-*) are
@@ -71,7 +76,7 @@ export interface PromptOptions {
   repairError?: string;
 }
 
-export function buildPrompt(request: FillRequest, options: PromptOptions = {}): ChatMessage[] {
+export function buildPrompt(request: PromptRequest, options: PromptOptions = {}): ChatMessage[] {
   const fence = randomFence();
   const messages: ChatMessage[] = [];
 
@@ -92,12 +97,26 @@ export function buildPrompt(request: FillRequest, options: PromptOptions = {}): 
     ? hintBlocks.join('\n')
     : '(none)';
 
+  // Whole-form guidance (the <field-fox context="…"> embedder input) is trusted
+  // site-author text like the per-field hints, so it rides the SAME lane — but in
+  // its own labeled sub-block so form-wide and per-field guidance stay distinct.
+  const formContext = request.formContext?.trim();
+  const formContextBlock = formContext
+    ? [
+        '--- FORM CONTEXT (whole-form guidance) ---',
+        formContext,
+        '--- END FORM CONTEXT ---',
+        '',
+      ]
+    : [];
+
   const userText = [
     'FORM FIELDS (schema — describes the controls you may plan for):',
     fieldLines || '(no fields)',
     '',
     '===== SITE-AUTHOR INSTRUCTIONS (TRUSTED) =====',
     'Per-field guidance from the site owner. Follow these when planning values.',
+    ...formContextBlock,
     authorLane,
     '===== END SITE-AUTHOR INSTRUCTIONS =====',
     '',

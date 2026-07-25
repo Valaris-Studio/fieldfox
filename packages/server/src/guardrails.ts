@@ -1,5 +1,4 @@
 import type { Context, MiddlewareHandler } from 'hono';
-import { SCHEMA_VERSION } from '@fieldfox/shared';
 import {
   ALLOWED_IMAGE_MIME,
   SITE_KEY_PREFIX,
@@ -19,6 +18,10 @@ declare module 'hono' {
     fieldfoxSiteKey: string;
     fieldfoxPolicy: SiteKeyPolicy;
     fieldfoxEstimatedTokens: number;
+    // Resolved per-formId model override (config.formPolicies[formId].model), if
+    // any. The fill handler passes it to the provider call in place of the
+    // default model.
+    fieldfoxModelOverride: string;
   }
 }
 
@@ -72,8 +75,8 @@ function isAllowedMime(mime: string): mime is AllowedImageMime {
   return (ALLOWED_IMAGE_MIME as readonly string[]).includes(mime);
 }
 
-// The whole int is the major for v1 (SCHEMA_VERSION === 1); document the rule so
-// a future minor scheme (e.g. major = floor(version)) has a defined seam.
+// The whole int is the major today; document the rule so a future minor scheme
+// (e.g. major = floor(version)) has a defined seam.
 function majorOf(version: number): number {
   return Math.trunc(version);
 }
@@ -103,6 +106,7 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
       images?: Array<{ dataUrl?: unknown }>;
       contextText?: unknown;
       formSchema?: { fields?: unknown[] };
+      formId?: unknown;
     };
     try {
       // Hono caches the parsed JSON; the fill handler's later c.req.json() reuses
@@ -115,13 +119,19 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
     // 1. Version skew (426 Upgrade Required). A widget on an unsupported MAJOR
     // schemaVersion gets a structured refuse it renders as "update required";
     // this precedes auth so a stale pinned-CDN widget always learns to update.
+    // The server serves a SET of majors (e.g. {1, 2}) so a stale widget migrates
+    // gracefully (PLAN §0 version-skew row).
     const requestedVersion = typeof body.schemaVersion === 'number' ? body.schemaVersion : NaN;
-    if (!Number.isFinite(requestedVersion) || majorOf(requestedVersion) !== config.supportedSchemaVersion) {
+    const served = config.supportedSchemaVersions;
+    if (!Number.isFinite(requestedVersion) || !served.includes(majorOf(requestedVersion))) {
       log({ event: 'refused', status: 426, reason: 'schema_version_unsupported' });
       return refuse(c, 426, {
         error: 'schema_version_unsupported',
-        serverSchemaVersion: SCHEMA_VERSION,
-        message: `This fieldfox server serves schemaVersion ${config.supportedSchemaVersion}; the widget must be updated.`,
+        // Singular field kept for widgets that read it: the max (current) major
+        // served. The full set is authoritative.
+        serverSchemaVersion: Math.max(...served),
+        serverSchemaVersions: served,
+        message: `This fieldfox server serves schemaVersion(s) ${served.join(', ')}; the widget must be updated.`,
       });
     }
 
@@ -224,6 +234,12 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
     c.set('fieldfoxPolicy', policy);
     c.set('fieldfoxEstimatedTokens', estimatedTokens);
 
+    // Resolve the per-formId model override, if configured. The formId is an
+    // opaque token, not user content, so it is safe in operational metadata.
+    const formId = typeof body.formId === 'string' ? body.formId : undefined;
+    const modelOverride = formId ? config.formPolicies?.[formId]?.model : undefined;
+    if (modelOverride) c.set('fieldfoxModelOverride', modelOverride);
+
     const fieldCount = Array.isArray(body.formSchema?.fields) ? body.formSchema!.fields!.length : 0;
     log({
       event: 'accepted',
@@ -232,6 +248,7 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
       fieldCount,
       imageCount: images.length,
       estimatedTokens,
+      ...(formId ? { formId } : {}),
     });
 
     await next();

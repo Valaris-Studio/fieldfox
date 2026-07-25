@@ -2,6 +2,20 @@ import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { SCHEMA_VERSION } from '@fieldfox/shared';
 
+// The set of MAJOR schemaVersions this server serves. The current shared
+// contract is v2; a stale v1 widget on a CDN keeps working during the migration
+// window (PLAN §0 version-skew row). Any major outside this set → 426.
+export const SUPPORTED_SCHEMA_VERSIONS = [1, SCHEMA_VERSION] as const;
+
+// Per-form policy overrides keyed by the opaque `formId` a request may carry
+// (PLAN §0 "Form-level embedder inputs": model override first, validations
+// later). When a request's formId matches a key here, its `model` replaces the
+// default provider model for that call.
+const FormPolicy = z.object({
+  model: z.string().optional(),
+});
+export type FormPolicy = z.infer<typeof FormPolicy>;
+
 // Guardrail configuration (PLAN §0 "Server distribution", card D2). A single
 // deployment serves MULTIPLE site keys, each mapped to its own origin allowlist
 // and daily token budget, plus process-global request/image limits. Config is
@@ -44,9 +58,13 @@ export const GuardrailConfig = z.object({
   // (the server currently sources the model from env, so this is forward-looking
   // guard state a deployer can wire without a code change).
   modelAllowlist: z.array(z.string()).optional(),
-  // The single major schemaVersion this server serves. Version skew beyond the
-  // major → 426 (PLAN §0 version-skew policy).
-  supportedSchemaVersion: z.number().int().positive().default(SCHEMA_VERSION),
+  // The MAJOR schemaVersions this server serves. A request whose major is not in
+  // this set → 426 (PLAN §0 version-skew policy). Defaults to {1, 2} so a stale
+  // v1 widget keeps working alongside the current v2 contract.
+  supportedSchemaVersions: z.array(z.number().int().positive()).default([...SUPPORTED_SCHEMA_VERSIONS]),
+  // Optional per-formId policy overrides. When a request's formId matches a key,
+  // its policy (currently just `model`) applies to that request (PLAN §0 G3).
+  formPolicies: z.record(z.string(), FormPolicy).optional(),
 });
 export type GuardrailConfig = z.infer<typeof GuardrailConfig>;
 
