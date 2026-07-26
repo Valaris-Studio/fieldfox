@@ -59,8 +59,8 @@ It prints a ready-to-paste snippet:
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/npm/@fieldfox/widget@0.1.0/dist/fieldfox.js"
-  integrity="sha384-..."
+  src="https://cdn.jsdelivr.net/npm/@fieldfox/widget@0.1.1/dist/fieldfox.js"
+  integrity="sha384-xx/rwrfhjvkfbfxXp5oDcuZVhIpqlNyDT55RaqpKM2kv8dbbsqrnuTu0Rv4pZECw"
   crossorigin="anonymous"
 ></script>
 <field-fox
@@ -69,6 +69,10 @@ It prints a ready-to-paste snippet:
   site-key="ffx_pk_..."
 ></field-fox>
 ```
+
+The version is pinned exactly and the hash is the sha384 of that exact file, so
+the CDN cannot serve you different bytes than the ones published. Re-run the
+generator after every release — a new version means a new hash.
 
 npm consumers import the ESM entry instead (it self-registers the element on import):
 

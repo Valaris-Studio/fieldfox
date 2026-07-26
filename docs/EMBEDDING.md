@@ -12,8 +12,8 @@ Production embeds pin an **exact** version on jsDelivr and verify the bytes with
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/npm/@fieldfox/widget@0.1.0/dist/fieldfox.js"
-  integrity="sha384-..."
+  src="https://cdn.jsdelivr.net/npm/@fieldfox/widget@0.1.1/dist/fieldfox.js"
+  integrity="sha384-xx/rwrfhjvkfbfxXp5oDcuZVhIpqlNyDT55RaqpKM2kv8dbbsqrnuTu0Rv4pZECw"
   crossorigin="anonymous"
 ></script>
 <field-fox
@@ -23,9 +23,13 @@ Production embeds pin an **exact** version on jsDelivr and verify the bytes with
 ></field-fox>
 ```
 
-The script is the IIFE bundle; it self-registers the `<field-fox>` element on load.
+The script is the IIFE bundle; it self-registers the `<field-fox>` element on load. The hash above belongs to 0.1.1 specifically — a different version needs its own, so regenerate rather than bumping the version in place.
 
 ### npm ESM
+
+```sh
+npm install @fieldfox/widget
+```
 
 ```js
 import { registerFieldFox } from '@fieldfox/widget';
