@@ -56,6 +56,43 @@ describe('field fixtures round-trip', () => {
     expect(FormField.parse(selectField).options).toHaveLength(2);
   });
 
+  // v4 kinds (drivers, RESEARCH §9.8): a custom widget the driver layer can
+  // operate is a first-class kind, so the model targets it as a selectable
+  // control rather than free text. Options stay OPTIONAL on combobox — a
+  // select-only combobox renders its options only when opened, and we never
+  // open-probe at introspection time, so the model plans a value string the
+  // driver matches by accessible name at fill time.
+  test('combobox field parses without options (post-hoc matching)', () => {
+    const parsed = FormField.parse({
+      id: 'f4',
+      kind: 'combobox' as const,
+      labelCandidates: ['Card type'],
+      fillable: true,
+    });
+    expect(parsed.kind).toBe('combobox');
+    expect(parsed.options).toBeUndefined();
+  });
+
+  test('combobox field parses WITH options when the author enumerated them', () => {
+    const parsed = FormField.parse({ ...selectField, id: 'f5', kind: 'combobox' as const });
+    expect(parsed.options).toHaveLength(2);
+  });
+
+  test('switch field parses', () => {
+    const parsed = FormField.parse({
+      id: 'f6',
+      kind: 'switch' as const,
+      labelCandidates: ['Email notifications'],
+      fillable: true,
+    });
+    expect(parsed.kind).toBe('switch');
+  });
+
+  test('an unknown kind is still rejected', () => {
+    const bogus = { ...textField, kind: 'sldier' };
+    expect(() => FormField.parse(bogus)).toThrow();
+  });
+
   test('hint values over 500 chars are rejected', () => {
     const tooLong = { ...hintedField, authorHints: { hint: 'x'.repeat(501) } };
     expect(() => FormField.parse(tooLong)).toThrow();

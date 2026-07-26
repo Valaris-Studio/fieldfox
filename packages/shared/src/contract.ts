@@ -6,9 +6,10 @@ import { z } from 'zod';
 
 // Bump on any breaking change to the shapes below. The server rejects requests
 // whose schemaVersion it cannot serve (PLAN §0, card D2). v3 adds the optional
-// `documents` field (PDF attachments) — additive, so the server serves the whole
-// {1,2,3} major set and stale v1/v2 widgets keep working.
-export const SCHEMA_VERSION = 3;
+// `documents` field (PDF attachments); v4 adds the `combobox`/`switch` field
+// kinds the driver layer can operate. Both are additive, so the server serves
+// the whole {1,2,3,4} major set and stale widgets keep working.
+export const SCHEMA_VERSION = 4;
 
 const MAX_HINT = 500;
 
@@ -41,6 +42,12 @@ export const FieldKind = z.enum([
   'tel',
   'url',
   'password',
+  // v4: custom widgets the driver layer operates through their ARIA contract
+  // (RESEARCH §9). `combobox` covers role=combobox/listbox pickers; `switch`
+  // covers role=switch and role=checkbox on non-input elements. A widget with
+  // no matching driver stays kind `other` + fillable:false, as before.
+  'combobox',
+  'switch',
   'other',
 ]);
 export type FieldKind = z.infer<typeof FieldKind>;

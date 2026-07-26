@@ -219,4 +219,4 @@ The widget makes no external network calls beyond your fill endpoint, and loads 
 
 ## Wire contract
 
-The current wire contract is `schemaVersion = 3`, defined as a zod schema in `packages/shared`. If you pin an older widget version whose major the server no longer serves, the server refuses with `426 schema_version_unsupported` and the widget shows an "out of date — the site needs to update its snippet" message. Keeping the embedded widget version current avoids this; see the version-skew section of [docs/SELF-HOSTING.md](SELF-HOSTING.md#version-skew-and-upgrades).
+The current wire contract is `schemaVersion = 4`, defined as a zod schema in `packages/shared`. If you pin an older widget version whose major the server no longer serves, the server refuses with `426 schema_version_unsupported` and the widget shows an "out of date — the site needs to update its snippet" message. Keeping the embedded widget version current avoids this; see the version-skew section of [docs/SELF-HOSTING.md](SELF-HOSTING.md#version-skew-and-upgrades).

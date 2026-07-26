@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { SCHEMA_VERSION } from '@fieldfox/shared';
 
 // The set of MAJOR schemaVersions this server serves. The current shared
-// contract is v3; stale v1/v2 widgets on a CDN keep working during the migration
-// window (PLAN §0 version-skew row). Any major outside this set → 426.
-export const SUPPORTED_SCHEMA_VERSIONS = [1, 2, SCHEMA_VERSION] as const;
+// contract is v4; stale v1/v2/v3 widgets on a CDN keep working during the
+// migration window (PLAN §0 version-skew row). Any major outside this set → 426.
+export const SUPPORTED_SCHEMA_VERSIONS = [1, 2, 3, SCHEMA_VERSION] as const;
 
 // Per-form policy overrides keyed by the opaque `formId` a request may carry
 // (PLAN §0 "Form-level embedder inputs": model override first, validations

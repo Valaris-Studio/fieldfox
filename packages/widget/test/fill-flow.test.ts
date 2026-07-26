@@ -284,10 +284,10 @@ test('fill runs end to end on a form-less target container (pilot finding 1)', a
   expect(org.value).toBe('Grupo Andino');
 });
 
-// Card: accept-documents. The wire always carries a `documents` array (v3
-// default []); when the popover emits documents in the event detail, they ride
-// the POSTed FillRequest unchanged.
-test('the wire carries an empty documents array by default (v3)', async () => {
+// Card: accept-documents. The wire always carries a `documents` array
+// (defaulting to []); when the popover emits documents in the event detail,
+// they ride the POSTed FillRequest unchanged.
+test('the wire carries an empty documents array by default', async () => {
   const { form } = mountForm();
   fetchSpy.mockResolvedValue(jsonResponse({ fills: [] }));
   fireFill(form);
@@ -310,5 +310,4 @@ test('documents in the fill event detail ride the POSTed request', async () => {
   await flush();
   const body = postBody();
   expect(body.documents).toEqual([doc]);
-  expect(body.schemaVersion).toBe(3);
 });

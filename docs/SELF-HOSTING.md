@@ -156,18 +156,18 @@ The default `InMemoryStore` is **single-instance**. Its counters, budgets, and k
 
 ## Version skew and upgrades
 
-The current wire contract is `schemaVersion = 3`. The server serves a **set** of major versions — `{1, 2, 3}` — so a CDN-pinned widget on an older major keeps working during a migration window. A request whose major is not in the served set is refused with:
+The current wire contract is `schemaVersion = 4`. The server serves a **set** of major versions — `{1, 2, 3, 4}` — so a CDN-pinned widget on an older major keeps working during a migration window. A request whose major is not in the served set is refused with:
 
 ```json
 {
   "error": "schema_version_unsupported",
-  "serverSchemaVersion": 3,
-  "serverSchemaVersions": [1, 2, 3],
-  "message": "This fieldfox server serves schemaVersion(s) 1, 2, 3; the widget must be updated."
+  "serverSchemaVersion": 4,
+  "serverSchemaVersions": [1, 2, 3, 4],
+  "message": "This fieldfox server serves schemaVersion(s) 1, 2, 3, 4; the widget must be updated."
 }
 ```
 
-The widget renders this as an "out of date — the site needs to update its snippet" message. Because old widget versions stay on the served set, an exact-version CDN pin keeps working even as you upgrade the server; you retire a major only by dropping it from the served set. The served set defaults to `{1, 2, 3}` and is a `GuardrailConfig.supportedSchemaVersions` field for programmatic embedders (no env key yet).
+The widget renders this as an "out of date — the site needs to update its snippet" message. Because old widget versions stay on the served set, an exact-version CDN pin keeps working even as you upgrade the server; you retire a major only by dropping it from the served set. The served set defaults to `{1, 2, 3, 4}` and is a `GuardrailConfig.supportedSchemaVersions` field for programmatic embedders (no env key yet).
 
 ## Privacy and logging
 

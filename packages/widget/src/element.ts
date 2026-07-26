@@ -30,7 +30,7 @@ const DEFAULT_ENDPOINT = '/api/fill';
 // literal: value-importing it from shared would pull that package's zod runtime
 // (~20KB gzip) into the eager bundle and blow the 35KB budget (PLAN §0 "widget
 // imports shared TYPES, not zod runtime"; RESEARCH §4 top risk #3).
-const WIRE_SCHEMA_VERSION = 3;
+const WIRE_SCHEMA_VERSION = 4;
 
 // Caps for the form-level embedder inputs, mirrored locally from the shared
 // contract's MAX_FORM_CONTEXT / MAX_FORM_ID (same zod-free-bundle reasoning as

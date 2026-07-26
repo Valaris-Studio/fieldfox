@@ -58,7 +58,7 @@ function post(app: ReturnType<typeof createApp>, body: unknown) {
   });
 }
 
-describe('version gate serves majors {1, 2, 3}', () => {
+describe('version gate serves majors {1, 2, 3, 4}', () => {
   test('v1 request (schemaVersion 1, no form-level fields) → 200 FillPlan', async () => {
     const app = build(recordingCaller(), baseConfig());
     const res = await post(app, baseRequest({ schemaVersion: 1 }));
@@ -102,9 +102,15 @@ describe('version gate serves majors {1, 2, 3}', () => {
     expect(res.status).toBe(200);
   });
 
-  test('v3 request (current SCHEMA_VERSION) → 200', async () => {
+  test('v3 request (served legacy major) → 200', async () => {
     const app = build(recordingCaller(), baseConfig());
     const res = await post(app, baseRequest({ schemaVersion: 3 }));
+    expect(res.status).toBe(200);
+  });
+
+  test('v4 request (current SCHEMA_VERSION) → 200', async () => {
+    const app = build(recordingCaller(), baseConfig());
+    const res = await post(app, baseRequest({ schemaVersion: 4 }));
     expect(res.status).toBe(200);
   });
 
@@ -119,9 +125,9 @@ describe('version gate serves majors {1, 2, 3}', () => {
     expect(res.status).toBe(200);
   });
 
-  test('an unsupported major (4) → 426 with the structured refuse', async () => {
+  test('an unsupported major (5) → 426 with the structured refuse', async () => {
     const app = build(recordingCaller(), baseConfig());
-    const res = await post(app, baseRequest({ schemaVersion: 4 }));
+    const res = await post(app, baseRequest({ schemaVersion: 5 }));
     expect(res.status).toBe(426);
     const body = (await res.json()) as { error: string; serverSchemaVersion: number };
     expect(body.error).toBe('schema_version_unsupported');
@@ -133,7 +139,7 @@ describe('version gate serves majors {1, 2, 3}', () => {
     const res = await post(app, baseRequest({ schemaVersion: 99 }));
     expect(res.status).toBe(426);
     const body = (await res.json()) as { serverSchemaVersions: number[] };
-    expect(body.serverSchemaVersions).toEqual([1, 2, 3]);
+    expect(body.serverSchemaVersions).toEqual([1, 2, 3, 4]);
   });
 });
 
