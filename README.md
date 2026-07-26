@@ -106,7 +106,11 @@ Evergreen Chrome, Firefox, and Edge, plus Safari 15.4+. The in-flight tracer eff
 
 ## Roadmap
 
-A hosted cloud tier is planned: a plug-and-play endpoint with a few free requests, then account creation and credit packages, so you can try Fieldfox without standing up a server. Self-hosting stays fully supported and first-class.
+**A hosted tier is where Fieldfox is going.** The goal is that you paste one snippet into your page and it fills forms immediately — no account, no API key, no server. Our backend recognizes your site, serves a free allowance, and only then asks you to create an account and buy credits or a plan. Signing up should be something you do *after* seeing it work, not before.
+
+Self-hosting stays first-class and permanently supported: the same MIT stack, your own credentials, no metering. The widget is identical either way — the only difference is which endpoint it points at, and whether that endpoint meters. Hosted-only capability lives in the server, never behind a feature flag in the widget.
+
+Until the hosted service ships, self-hosting is the only way to run Fieldfox, and the quickstart above is the path.
 
 ## Development & contributing
 
