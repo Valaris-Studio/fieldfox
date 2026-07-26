@@ -122,6 +122,11 @@ interface FilteredComboOptions {
   // Autocomplete caps its result page. It is what makes typing LOAD-BEARING here:
   // an option past the cap is unreachable until the query narrows the list to it.
   renderCap?: number;
+  // A real setTimeout debounce that is NOT cancelled on close — so the timer
+  // scheduled by our typing fires AFTER the commit and re-opens the listbox over
+  // an already-filled field. MUI and downshift do cancel it; a widget that forgets
+  // to is the case the driver's bounded re-close exists for.
+  debounceMs?: number;
 }
 
 // Editable/filtered combobox (MUI Autocomplete, downshift, React Aria): a text
@@ -140,6 +145,7 @@ function mountFilteredCombobox(opts: FilteredComboOptions): {
     inForm = false,
     roleOnWrapper = false,
     renderCap = Infinity,
+    debounceMs,
   } = opts;
   const inputAttrs = roleOnWrapper ? '' : 'role="combobox" aria-controls="lb" aria-expanded="false"';
   const wrapperAttrs = roleOnWrapper
@@ -186,6 +192,13 @@ function mountFilteredCombobox(opts: FilteredComboOptions): {
   };
 
   const renderAfterDelay = (): void => {
+    // The debounce variant deliberately leaves its timer running across close():
+    // the re-open the driver has to survive happens because the widget forgot to
+    // cancel it, so cancelling here would remove the very behaviour under test.
+    if (debounceMs !== undefined) {
+      setTimeout(render, debounceMs);
+      return;
+    }
     let remaining = filterDelayTicks;
     const tick = (): void => {
       if (remaining-- <= 0) render();
@@ -876,6 +889,61 @@ test('typing goes through the native setter so a controlled input filters', asyn
   );
 
   expect(seen).toContain('Austria');
+});
+
+// A debounced widget's filter timer can outlive the commit and RE-open the popup
+// over an already-filled field. The value is correct either way, so this must NOT
+// revert — but a dangling popup is exactly what the close path exists to prevent,
+// so the driver re-asserts the close once after a settle.
+//
+// The load-bearing assertion is that the popup is shut BY THE TIME applyFillPlan
+// RESOLVES: the driver has to absorb the pending debounce itself, because once the
+// promise is back nothing is left to clean up after the timer fires.
+test('a debounce that re-opens the listbox after commit is closed again', async () => {
+  const { input, listbox } = mountFilteredCombobox({
+    options: ['Camila Rojas', 'Diego Vargas'],
+    debounceMs: 50,
+  });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'Camila Rojas' }),
+    resolveById({ 'ff-0': '#cb' }),
+  );
+
+  expect(report.filled).toContain('ff-0'); // a stuck popup never un-fills a good value
+  expect(input.value).toBe('Camila Rojas');
+  expect(input.getAttribute('aria-expanded')).toBe('false');
+  expect(listbox.hidden).toBe(true);
+
+  // And it STAYS shut: no timer the fill left behind re-opens it afterwards.
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  expect(input.getAttribute('aria-expanded')).toBe('false');
+  expect(listbox.hidden).toBe(true);
+});
+
+// The same exposure on the failure path: restoring the original text is itself an
+// input event, so it too can schedule a re-open after the field was left.
+test('a debounced re-open after a failed fill is closed too', async () => {
+  const { input, listbox } = mountFilteredCombobox({
+    options: ['Camila Rojas', 'Diego Vargas'],
+    current: 'Diego Vargas',
+    debounceMs: 50,
+  });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'Nobody At All' }),
+    resolveById({ 'ff-0': '#cb' }),
+    { timeoutMs: 400 },
+  );
+
+  expect(report.left[0]).toMatchObject({ fieldId: 'ff-0', reason: 'no-matching-option' });
+  expect(input.value).toBe('Diego Vargas');
+  expect(input.getAttribute('aria-expanded')).toBe('false');
+  expect(listbox.hidden).toBe(true);
+
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  expect(input.getAttribute('aria-expanded')).toBe('false');
+  expect(listbox.hidden).toBe(true);
 });
 
 test('abort mid-type reverts the input and stops the loop', async () => {

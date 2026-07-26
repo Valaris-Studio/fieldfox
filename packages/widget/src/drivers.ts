@@ -43,6 +43,13 @@ const VIRTUAL_SCROLL_STEP_PX = 200;
 // once (a measurement pass) before advancing to the next one.
 const VIRTUAL_SCROLL_STALL_ROUNDS = 2;
 
+// How long a committed filtered combobox is watched for a debounce-driven RE-open
+// before its popup is closed a second time. Comfortably past the debounce these
+// widgets actually use (MUI's default is 0, downshift and typical remote-search
+// boxes sit around 100–200 ms) and paid ONCE per driven field, after the value is
+// already confirmed — it is a cleanup, not part of the fill's budget.
+const REOPEN_SETTLE_MS = 250;
+
 // Poll rounds an EMPTY listbox gets before it is read as "no results" rather than
 // "not mounted yet" — the two are indistinguishable at any single tick. Generous
 // (a portal can take several frames to render its items) but still well short of
@@ -274,7 +281,7 @@ const filteredComboboxDriver: FillDriver = {
       ctx,
     );
     committedName.set(el, accessibleName(match));
-    await closePopup(el, listbox);
+    await closePopupAndStayClosed(el, listbox);
   },
 
   // The input's own value is the committed one: these widgets write the chosen
@@ -286,13 +293,15 @@ const filteredComboboxDriver: FillDriver = {
 
   // Unlike the select-only path, this driver TYPED into the field, so closing is
   // not enough — the filter text has to come back out or the user is left with a
-  // half-typed query where their value used to be.
+  // half-typed query where their value used to be. Restoring the text is itself
+  // another input event, so it can schedule one more debounced re-open: the same
+  // bounded re-close the commit path uses applies here too.
   async revert(el, original) {
     const input = editableComboboxInput(el);
     if (input && input.value !== (original.committedText ?? '')) {
       typeInto(input, original.committedText ?? '');
     }
-    await closePopup(el, resolveListbox(el));
+    await closePopupAndStayClosed(el, resolveListbox(el));
   },
 };
 
@@ -530,6 +539,35 @@ async function closePopup(el: Element, listbox: Element | null): Promise<void> {
   if (!isOpen(el, listbox)) return;
   document.body.dispatchEvent(pointerEvent('pointerdown'));
   document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+}
+
+// Close, let a pending debounce land, then close ONCE more if it re-opened.
+//
+// A filtered combobox schedules its filter on a timer, so a fill that types,
+// clicks the match and closes can be followed by that timer firing and RE-opening
+// the listbox over an already-committed field. MUI and downshift cancel the timer
+// on close, but a widget that doesn't is entirely plausible, and a dangling popup
+// is precisely what the close path exists to prevent.
+//
+// Deliberately ONE bounded re-check on its own small budget, not a poll: the value
+// is already confirmed at this point, so a popup that still refuses to close is
+// the widget's bug and NOT a reason to revert a correct fill. It must also not
+// spend the per-field deadline, which by now may be exhausted.
+//
+// The wait is awaited, not detached. A detached timer would spare the caller the
+// delay, but it would also survive teardown and fire click/keydown into a page the
+// widget no longer owns — a worse trade than the delay it saves. Since a debounce
+// fires later by definition, there is no way to know it WON'T without waiting, so
+// the cost is paid on every filtered field; REOPEN_SETTLE_MS is sized to be the
+// smallest window that clears the debounces these widgets actually use.
+async function closePopupAndStayClosed(el: Element, listbox: Element | null): Promise<void> {
+  await closePopup(el, listbox);
+  await delay(REOPEN_SETTLE_MS);
+  if (isOpen(el, listbox)) await closePopup(el, listbox);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isOpen(el: Element, listbox: Element | null): boolean {
