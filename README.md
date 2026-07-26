@@ -3,8 +3,9 @@
 Fieldfox is a `<field-fox>` web component that fills any web form from free text, pasted or uploaded images, and attached documents. The widget introspects the target form, sends its schema plus the user's context to a small self-hosted server that holds your LLM credentials, and applies the returned plan — filling each field or leaving it exactly as it was. It never submits the form.
 
 - **Framework-agnostic custom element** — drop the `<field-fox>` tag onto any HTML/JS/CSS page; it works with React, Vue, plain HTML, and forms inside a native `<dialog>`.
-- **Zero runtime dependencies, ~13KB gzip** — the widget ships as a self-registering IIFE (script tag) or ESM module. Its UI lives entirely in an open shadow root and never wraps, moves, or injects into your form.
+- **Zero runtime dependencies, ~18KB gzip** — the widget ships as a self-registering IIFE (script tag) or ESM module. Its UI lives entirely in an open shadow root and never wraps, moves, or injects into your form.
 - **Text, image, and document input** — paste an email or a photo of a business card; behind an opt-in flag, attach PDFs and text files.
+- **Design-system widgets, not just native inputs** — ARIA comboboxes/selects, switches, and ProseMirror/tiptap editors are filled through their accessibility contract, so shadcn, Radix and friends work with no adapter. A widget fieldfox can't confirm is left untouched rather than guessed at.
 - **Adjustment mode for integrators** — an opt-in `adjust` overlay to inspect and live-edit each field's `data-ff-*` annotations, test them against a fill, and copy the result back to source (dev-only; not for production pages).
 - **Safety invariants** — never auto-submits; fills or leaves each field with per-field readback-or-revert; disables affected fields while a request is in flight.
 - **Credentials stay server-side** — the self-hosted [Hono](https://hono.dev) server holds the OpenAI-compatible API key and enforces every guardrail (site keys, origin allowlist, rate limits, per-key daily token budget, image caps). No LLM call ever happens in the browser.

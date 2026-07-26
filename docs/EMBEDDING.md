@@ -2,7 +2,7 @@
 
 This guide is for frontend developers integrating the `<field-fox>` custom element into a page or app. To stand up the server the widget talks to, see [docs/SELF-HOSTING.md](SELF-HOSTING.md).
 
-The widget is a framework-agnostic custom element with zero runtime dependencies (~13KB gzip). Its entire UI lives in an open shadow root; it never wraps, moves, or injects into your form.
+The widget is a framework-agnostic custom element with zero runtime dependencies (~18KB gzip). Its entire UI lives in an open shadow root; it never wraps, moves, or injects into your form.
 
 ## Install
 
@@ -205,9 +205,23 @@ Drop the script tag and the element; no build step. See the [plain-HTML examples
 
 Forms inside a native `<dialog>` are supported — the panel opens into the browser top layer so it isn't clipped by the dialog. See [examples/plain-html/dialog-host.html](../examples/plain-html/dialog-host.html).
 
-### Current limitation
+### What gets filled
 
-Fieldfox fills `<input>`, `<textarea>`, `<select>`, and checkable controls (checkboxes, radios) only. **Contenteditable and rich-text editors are not filled** in v1.
+Native controls — `<input>`, `<textarea>`, `<select>`, checkboxes and radios — are filled directly.
+
+**Custom widgets** built from ARIA roles are filled through their accessibility contract, so design-system components work without any adapter on your side:
+
+| Widget | Requirement |
+|---|---|
+| Select / dropdown | `role="combobox"` or `role="listbox"`, with `role="option"` children when open |
+| Toggle / switch | `role="switch"` or `role="checkbox"` with `aria-checked` |
+| Rich-text editor | ProseMirror-based only (tiptap included) |
+
+Fieldfox opens the widget, matches the planned value against the options' **accessible names**, activates the match, and reads the committed value back. Options are matched at fill time, never harvested by opening your dropdowns during introspection.
+
+Matching tolerates case, accents and whitespace differences — not partial ones. A planned "Gold" will not select "Gold Plus"; when nothing matches exactly the field is left untouched, same as any other value fieldfox can't confirm.
+
+**Anything else is left alone**, by design: a `contenteditable` with no ProseMirror behind it, a Slate or Lexical editor, or a custom widget with no ARIA roles. These still appear in the schema as context for the model, but are never written to. If a widget of yours isn't being filled, giving it the standard ARIA roles above is usually all it needs.
 
 ## Content Security Policy
 
