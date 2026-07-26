@@ -1,0 +1,241 @@
+<!doctype html>
+<!--
+  fieldfox against hand-rolled ARIA custom widgets — the framework-free half of
+  the driver test surface (card fd743951, RESEARCH §9.11).
+
+  Every widget here implements the bare APG contract the drivers actually rely
+  on (role, aria-expanded, aria-controls, aria-selected, aria-checked) with no
+  framework behind it. That makes this the deterministic regression fixture: if
+  a driver breaks against pure ARIA, it is the driver that is wrong. The real
+  Radix/shadcn fidelity check lives in examples/react-host, where portals,
+  hideOthers and BubbleInput can misbehave in ways a hand-rolled fixture cannot
+  fake.
+
+  The listbox mounts into a PORTAL (a body-level container, not a descendant of
+  the trigger) on purpose — resolving a popup that is not a descendant is the
+  case that breaks naive implementations.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Andes Cloud — deployment request (ARIA widgets)</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 32rem; padding: 0 1rem; }
+      .card { display: grid; gap: 0.5rem; border: 1px solid #ccc; border-radius: 8px; padding: 1rem; }
+      label, .field-label { font-weight: 600; margin-top: 0.5rem; }
+      input { font: inherit; padding: 0.4rem; }
+      button { font: inherit; }
+      .muted { color: #666; font-size: 0.875rem; margin: 0; }
+
+      .combobox {
+        font: inherit; padding: 0.4rem; text-align: left; cursor: pointer;
+        border: 1px solid #767676; border-radius: 4px; background: #fff;
+      }
+      .combobox[aria-expanded='true'] { border-color: #e2622c; }
+
+      .listbox {
+        position: absolute; z-index: 10; margin: 0; padding: 0.25rem; list-style: none;
+        border: 1px solid #767676; border-radius: 4px; background: #fff;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); min-width: 12rem;
+      }
+      .listbox[hidden] { display: none; }
+      .listbox li { padding: 0.35rem 0.5rem; border-radius: 3px; cursor: pointer; }
+      .listbox li:hover { background: #f0f0f0; }
+      .listbox li[aria-selected='true'] { background: #e2622c; color: #fff; }
+
+      .switch {
+        display: inline-flex; align-items: center; gap: 0.5rem; width: fit-content;
+        padding: 0.35rem 0.5rem; border: 1px solid #767676; border-radius: 999px;
+        background: #fff; cursor: pointer;
+      }
+      .switch::before {
+        content: ''; width: 2rem; height: 1rem; border-radius: 999px; background: #ccc;
+        transition: background 0.15s;
+      }
+      .switch[aria-checked='true']::before { background: #e2622c; }
+    </style>
+  </head>
+  <body>
+    <h1>Andes Cloud — deployment request</h1>
+    <p class="muted">
+      Region and tier are ARIA comboboxes; the two toggles are ARIA switches.
+      None of them is a native control — they exist to exercise the fill drivers.
+    </p>
+
+    <div id="deploy-card" class="card">
+      <label for="project-name">Project name</label>
+      <input id="project-name" name="project-name" type="text" />
+
+      <span class="field-label" id="region-label">Region</span>
+      <button
+        type="button"
+        class="combobox"
+        id="region"
+        name="region"
+        role="combobox"
+        aria-labelledby="region-label"
+        aria-controls="region-listbox"
+        aria-expanded="false"
+        data-value=""
+      >
+        Select a region
+      </button>
+
+      <span class="field-label" id="tier-label">Support tier</span>
+      <button
+        type="button"
+        class="combobox"
+        id="tier"
+        name="tier"
+        role="combobox"
+        aria-labelledby="tier-label"
+        aria-controls="tier-listbox"
+        aria-expanded="false"
+        data-value=""
+      >
+        Select a tier
+      </button>
+
+      <!--
+        No canned value maps to this one, so the mock plans an unmatchable
+        string. It must end the fill still reading "Select a plan" — the
+        leave-on-uncertainty guarantee, visible on the page.
+      -->
+      <span class="field-label" id="plan-label">Billing plan</span>
+      <button
+        type="button"
+        class="combobox"
+        id="plan"
+        name="plan"
+        role="combobox"
+        aria-labelledby="plan-label"
+        aria-controls="plan-listbox"
+        aria-expanded="false"
+        data-value=""
+      >
+        Select a plan
+      </button>
+
+      <span class="field-label" id="backups-label">Nightly backups</span>
+      <div class="switch" id="backups" role="switch" aria-checked="false" aria-labelledby="backups-label" tabindex="0">
+        <span>Enable nightly backups</span>
+      </div>
+
+      <span class="field-label" id="alerts-label">Email alerts</span>
+      <div class="switch" id="alerts" role="switch" aria-checked="false" aria-labelledby="alerts-label" tabindex="0">
+        <span>Email me on incidents</span>
+      </div>
+
+      <button type="button">Request deployment</button>
+    </div>
+
+    <!-- Portal root: listboxes mount HERE, outside the trigger's subtree. -->
+    <div id="portal-root"></div>
+
+    <script>
+      // A minimal APG-conformant combobox/switch implementation. Deliberately
+      // hand-rolled and dependency-free: the drivers must work against the pure
+      // ARIA contract, not against any one library's internals.
+      (() => {
+        const OPTIONS = {
+          region: [
+            ['sa-east-1', 'São Paulo'],
+            ['us-west-2', 'Oregon'],
+            ['eu-central-1', 'Frankfurt'],
+            ['ap-south-1', 'Mumbai'],
+          ],
+          tier: [
+            ['bronze', 'Bronze'],
+            ['silver', 'Silver'],
+            ['gold', 'Gold'],
+          ],
+          plan: [
+            ['monthly', 'Monthly'],
+            ['annual', 'Annual'],
+          ],
+        };
+
+        const portal = document.getElementById('portal-root');
+
+        for (const [triggerId, entries] of Object.entries(OPTIONS)) {
+          const trigger = document.getElementById(triggerId);
+          const listbox = document.createElement('ul');
+          listbox.id = `${triggerId}-listbox`;
+          listbox.className = 'listbox';
+          listbox.setAttribute('role', 'listbox');
+          listbox.hidden = true;
+          portal.append(listbox);
+
+          for (const [value, label] of entries) {
+            const option = document.createElement('li');
+            option.setAttribute('role', 'option');
+            option.setAttribute('aria-selected', 'false');
+            option.dataset.value = value;
+            option.textContent = label;
+            listbox.append(option);
+          }
+
+          const close = () => {
+            listbox.hidden = true;
+            trigger.setAttribute('aria-expanded', 'false');
+          };
+
+          const commit = (option) => {
+            for (const sibling of listbox.children) {
+              sibling.setAttribute('aria-selected', String(sibling === option));
+            }
+            trigger.dataset.value = option.dataset.value;
+            trigger.textContent = option.textContent;
+            close();
+            // Real widgets notify their host form; a driver must never depend
+            // on this firing, but its absence would make the fixture unrealistic.
+            trigger.dispatchEvent(new Event('change', { bubbles: true }));
+          };
+
+          trigger.addEventListener('click', () => {
+            const willOpen = listbox.hidden;
+            if (willOpen) {
+              const rect = trigger.getBoundingClientRect();
+              listbox.style.top = `${rect.bottom + window.scrollY + 2}px`;
+              listbox.style.left = `${rect.left + window.scrollX}px`;
+            }
+            listbox.hidden = !willOpen;
+            trigger.setAttribute('aria-expanded', String(willOpen));
+          });
+
+          listbox.addEventListener('click', (event) => {
+            const option = event.target.closest('[role="option"]');
+            if (option) commit(option);
+          });
+
+          document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !listbox.hidden) close();
+          });
+        }
+
+        for (const el of document.querySelectorAll('[role="switch"]')) {
+          const toggle = () => {
+            const next = el.getAttribute('aria-checked') !== 'true';
+            el.setAttribute('aria-checked', String(next));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          };
+          el.addEventListener('click', toggle);
+          el.addEventListener('keydown', (event) => {
+            if (event.key === ' ' || event.key === 'Enter') {
+              event.preventDefault();
+              toggle();
+            }
+          });
+        }
+      })();
+    </script>
+
+    <script src="../../packages/widget/dist/fieldfox.js"></script>
+    <field-fox
+      target="#deploy-card"
+      endpoint="http://localhost:8787/api/fill"
+      site-key="ffx_pk_dev0000000000000000000000000000"
+    ></field-fox>
+  </body>
+</html>

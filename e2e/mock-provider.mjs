@@ -202,6 +202,18 @@ function cannedFills(fields) {
       case 'checkbox':
         fills.push(CANNED.checkboxOnLabels.test(labels) ? set(f.id, 'true') : skip(f.id));
         break;
+      // v4 driver kinds. A combobox arrives with no options (no introspection
+      // open-probe), so the plan carries a display NAME the driver resolves
+      // against the live listbox — including the unmatchable value that must
+      // leave its field.
+      case 'combobox': {
+        const value = CANNED.comboboxByLabel[f.name] ?? CANNED.comboboxUnmatchable;
+        fills.push(set(f.id, value));
+        break;
+      }
+      case 'switch':
+        fills.push(CANNED.switchOnLabels.test(labels) ? set(f.id, 'true') : skip(f.id));
+        break;
       case 'text':
         fills.push(
           f.autocomplete === 'name' || /name/i.test(labels) ? set(f.id, CANNED.fullName) : skip(f.id),

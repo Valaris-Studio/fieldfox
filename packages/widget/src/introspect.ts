@@ -5,6 +5,7 @@ import type {
   FormField,
   FormSchema,
 } from '@fieldfox/shared';
+import { driverFor, driverKindFor } from './drivers.js';
 
 // Card C2 — DOM walk turning arbitrary host forms into a FormSchema, client-side,
 // zero runtime deps (RESEARCH §1). The server LLM does the semantic
@@ -35,6 +36,13 @@ const SKIPPED_INPUT_TYPES = new Set([
 
 const KNOWN_HINT_SUFFIXES = new Set(['ignore', 'hint', 'format', 'example']);
 
+// ARIA widgets that aren't form-associated, so form.elements never yields them.
+// The driven ones (combobox/listbox/switch/checkbox) are fillable via drivers.ts;
+// textbox and contenteditable stay in the schema as leave-only model context.
+const WIDGET_SELECTOR =
+  '[contenteditable], [role="textbox"], [role="combobox"], [role="listbox"], [role="switch"], [role="checkbox"]';
+const WIDGET_ROLES = new Set(['textbox', 'combobox', 'listbox', 'switch', 'checkbox']);
+
 // Warn once per unknown data-ff-* suffix across a whole introspection pass so a
 // repeated typo doesn't spam the console (typo detection, RESEARCH §5).
 const warnedUnknownSuffixes = new Set<string>();
@@ -59,19 +67,8 @@ export function introspectForms(roots: Element[]): IntrospectionResult {
     // with a scoped query for those. Form-less containers use the plain query.
     const controls =
       root instanceof HTMLFormElement
-        ? [
-            ...Array.from(root.elements),
-            ...Array.from(
-              root.querySelectorAll(
-                '[contenteditable], [role="textbox"], [role="combobox"], [role="listbox"]',
-              ),
-            ),
-          ]
-        : Array.from(
-            root.querySelectorAll(
-              'input, textarea, select, [contenteditable], [role="textbox"], [role="combobox"], [role="listbox"]',
-            ),
-          );
+        ? [...Array.from(root.elements), ...Array.from(root.querySelectorAll(WIDGET_SELECTOR))]
+        : Array.from(root.querySelectorAll(`input, textarea, select, ${WIDGET_SELECTOR}`));
 
     // Radio groups collapse to ONE field keyed by shared name; track which names
     // we've already emitted within this root so later members are skipped.
@@ -123,8 +120,7 @@ function isEnumerableControl(el: HTMLElement): boolean {
     return true;
   }
   if (isContentEditable(el)) return true;
-  const role = el.getAttribute('role');
-  return role === 'textbox' || role === 'combobox' || role === 'listbox';
+  return WIDGET_ROLES.has(el.getAttribute('role') ?? '');
 }
 
 function isDisabled(el: HTMLElement): boolean {
@@ -136,6 +132,14 @@ function isDisabled(el: HTMLElement): boolean {
 
 function isRadio(el: HTMLElement): el is HTMLInputElement {
   return el instanceof HTMLInputElement && el.type === 'radio';
+}
+
+// A non-native element standing in for a form control via role=. A native input
+// carrying a stray role is NOT one of these: the native path owns it.
+function isAriaWidget(el: HTMLElement): boolean {
+  if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) return false;
+  if (el instanceof HTMLTextAreaElement) return false;
+  return WIDGET_ROLES.has(el.getAttribute('role') ?? '');
 }
 
 function isContentEditable(el: HTMLElement): boolean {
@@ -213,6 +217,13 @@ function buildField(id: string, control: FormControl): FormField {
     }
   } else if (control instanceof HTMLTextAreaElement) {
     if (control.value) field.currentValue = control.value;
+  } else if (kind === 'switch') {
+    field.currentValue = control.getAttribute('aria-checked') === 'true' ? 'true' : 'false';
+  } else if (kind === 'combobox') {
+    // Only the value the trigger ALREADY shows — the option set stays unharvested
+    // because enumerating it would mean opening the widget (RESEARCH §9.8 (B)).
+    const committed = control.textContent?.trim();
+    if (committed) field.currentValue = committed;
   } else if (isContentEditable(control)) {
     const text = control.textContent?.trim();
     if (text) field.currentValue = text;
@@ -285,7 +296,9 @@ function kindOf(control: FormControl): FieldKind {
         return 'other';
     }
   }
-  return 'other'; // contenteditable / ARIA widget
+  // A driven ARIA widget gets its own kind so the model targets it with an option
+  // value rather than free text (RESEARCH §9.8); everything else stays 'other'.
+  return driverKindFor(control) ?? 'other';
 }
 
 function selectOptions(select: HTMLSelectElement): FieldOption[] {
@@ -309,9 +322,12 @@ function selectOptions(select: HTMLSelectElement): FieldOption[] {
 // them (RESEARCH §2, §6).
 function computeFillable(control: HTMLElement, kind: FieldKind): boolean {
   if (kind === 'password') return false;
-  if (isContentEditable(control)) return false;
-  const role = control.getAttribute('role');
-  if (role === 'combobox' || role === 'listbox') return false;
+  if (isContentEditable(control)) return false; // v1.1c, still leave-only
+  // An ARIA widget is fillable exactly when a driver can drive it (RESEARCH §9.6);
+  // an undriven one (role=textbox, an unknown widget) keeps the old hard false.
+  // Native controls skip this entirely — `driverFor` declines them by design, and
+  // a stray role= on a real <input> must not make it non-fillable.
+  if (isAriaWidget(control) && !driverFor(control)) return false;
   if ((control as HTMLInputElement).readOnly === true) return false;
   if (control.getAttribute('aria-readonly') === 'true') return false;
   if (!isVisible(control)) return false;

@@ -417,7 +417,11 @@ export class FieldFoxElement extends HTMLElement {
       // refuses to fill a disabled control. Re-enable first, then set values.
       this.restoreEffect?.();
       this.restoreEffect = null;
-      const report = applyFillPlan(plan, resolve);
+      // Drivers make this await real (RESEARCH §9.7): a superseding fill or a
+      // disconnect can land mid-sequence, so re-check the signal exactly as the
+      // request path above does before touching the panel.
+      const report = await applyFillPlan(plan, resolve, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       this.settleFill();
       panel.showStatus(summarize(report));
     } catch (error) {

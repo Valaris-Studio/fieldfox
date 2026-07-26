@@ -288,3 +288,64 @@ describe('id → element resolver', () => {
     expect((resolve(radio.id) as HTMLInputElement).name).toBe('g');
   });
 });
+
+// v1.1a drivers (RESEARCH §9.6/§9.8). Introspection must DISCOVER the ARIA
+// widgets a driver can operate and mark them fillable with their own kind —
+// without ever opening one to harvest options (no introspection open-probe).
+describe('driven ARIA widgets', () => {
+  test('a role=switch outside form.elements is discovered, kinded and fillable', () => {
+    const host = mount(`
+      <form>
+        <input name="project" />
+        <span id="backups-label">Nightly backups</span>
+        <div role="switch" aria-checked="false" aria-labelledby="backups-label"></div>
+      </form>
+    `);
+    const { schema } = introspectForms([host.querySelector('form')!]);
+    const field = schema.fields.find((f) => f.kind === 'switch');
+    expect(field).toBeDefined();
+    expect(field!.fillable).toBe(true);
+    expect(field!.labelCandidates).toContain('Nightly backups');
+  });
+
+  test('a role=combobox is fillable and carries NO options (never open-probed)', () => {
+    const host = mount(`
+      <form>
+        <span id="region-label">Region</span>
+        <button type="button" role="combobox" aria-labelledby="region-label"
+                aria-controls="lb" aria-expanded="false">Select a region</button>
+      </form>
+      <ul id="lb" role="listbox" hidden>
+        <li role="option">Frankfurt</li>
+      </ul>
+    `);
+    const { schema } = introspectForms([host.querySelector('form')!]);
+    const field = schema.fields.find((f) => f.kind === 'combobox')!;
+    expect(field.fillable).toBe(true);
+    expect(field.options).toBeUndefined();
+    // The widget must still be closed — introspection never opens anything.
+    expect(host.querySelector('[role="combobox"]')!.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  test('an undriven ARIA widget keeps the old hard fillable:false', () => {
+    const host = mount(`
+      <form>
+        <span id="notes-label">Notes</span>
+        <div role="textbox" aria-labelledby="notes-label"></div>
+      </form>
+    `);
+    const { schema } = introspectForms([host.querySelector('form')!]);
+    const field = schema.fields.find((f) => f.labelCandidates.includes('Notes'))!;
+    expect(field.fillable).toBe(false);
+  });
+
+  test('a native checkbox carrying role=switch stays the native kind', () => {
+    const host = mount(`
+      <form>
+        <label><input type="checkbox" role="switch" name="beta" /> Beta features</label>
+      </form>
+    `);
+    const { schema } = introspectForms([host.querySelector('form')!]);
+    expect(schema.fields.find((f) => f.name === 'beta')!.kind).toBe('checkbox');
+  });
+});

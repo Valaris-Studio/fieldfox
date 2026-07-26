@@ -3,6 +3,12 @@
 // strings that switch the mock into its error / leave-semantics modes. Keeping
 // them in one module means an assertion and the mock can never drift apart.
 
+// The wire contract's current major, mirrored from packages/shared's
+// SCHEMA_VERSION. Specs transpile as CJS and cannot import the workspace
+// package, so this is a hand-kept copy — the widget's own drift-guard unit test
+// (fill-flow.test.ts) is what actually pins the mirror against the source.
+export const WIRE_SCHEMA_VERSION = 4;
+
 export const CANNED = {
   fullName: 'Jane Doe',
   email: 'jane@doe.dev',
@@ -16,6 +22,18 @@ export const CANNED = {
   number: '42',
   // Keyed by the introspected field `name`; fallback is the first non-empty option.
   selectByName: { 'tshirt-size': 'm', role: 'engineer' },
+  // Custom-widget (driver) values for the ARIA fixture. A combobox carries NO
+  // options over the wire — we never open-probe at introspection — so the model
+  // plans a display-name string and the driver matches it to an option by
+  // accessible name at fill time. `comboboxUnmatchable` is the leave-semantics
+  // probe: a plausible value that exists in no listbox, which must leave the
+  // field untouched rather than force a wrong pick.
+  comboboxByLabel: { region: 'Frankfurt', tier: 'Gold' },
+  comboboxUnmatchable: 'Atlantis',
+  // Diacritic-insensitive matching: the model writes "Sao Paulo", the option
+  // reads "São Paulo".
+  comboboxDiacritic: 'Sao Paulo',
+  switchOnLabels: /backups/i,
   radioByName: { session: 'afternoon' },
   // Checkboxes whose label matches get `set true`; all others get an explicit skip.
   checkboxOnLabels: /woodworking|fully remote/i,

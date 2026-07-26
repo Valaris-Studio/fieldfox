@@ -1,4 +1,12 @@
 import type { Fill, FillPlan } from '@fieldfox/shared';
+import {
+  DRIVER_TIMEOUT_MS,
+  DriverError,
+  driverContext,
+  driverFor,
+  isAbort,
+  type FillDriver,
+} from './drivers.js';
 
 // Card C4 — the apply engine (RESEARCH §2). Sets values on LIVE form controls so
 // JS frameworks (React 19, react-hook-form, Vue, Angular) register them, then
@@ -22,6 +30,12 @@ import type { Fill, FillPlan } from '@fieldfox/shared';
 //     original and report the field `left`. A field is only ever left changed
 //     when its readback matches the plan — that is how fill-or-leave (PLAN §0)
 //     becomes a code guarantee rather than a model behavior.
+//
+// v1.1a made the loop ASYNC for the custom-widget drivers (drivers.ts,
+// RESEARCH §9.7). Native fields still run their exact synchronous sequence
+// inside it — they simply resolve immediately — while a driven ARIA widget gets
+// awaited, one field at a time so only one popup is ever open. Both paths share
+// the same readback-or-revert gate.
 
 export interface LeftField {
   fieldId: string;
@@ -38,39 +52,57 @@ export interface ApplyOptions {
   // password). Belt-and-braces: the server drops these too, but the executor
   // refuses to write them even if a plan slips one through.
   isFillable?: (element: Element) => boolean;
+  // Supersession / disconnect: a driver stops, reverts, and the loop leaves every
+  // remaining field untouched (RESEARCH §9.7).
+  signal?: AbortSignal;
+  // Per-field driver budget; the constant is the product default and tests inject
+  // a short one rather than sleeping it out.
+  timeoutMs?: number;
 }
 
-export function applyFillPlan(
+export async function applyFillPlan(
   plan: FillPlan,
   resolve: (id: string) => Element | undefined,
   opts: ApplyOptions = {},
-): FillReport {
+): Promise<FillReport> {
   const report: FillReport = { filled: [], left: [] };
 
   for (const fill of plan.fills) {
     if (fill.action !== 'set') continue; // skip / omitted → leave untouched
+    if (opts.signal?.aborted) break;
 
     const element = resolve(fill.fieldId);
     if (!element) {
       report.left.push({ fieldId: fill.fieldId, reason: 'not-found' });
       continue;
     }
-    if (!isSupportedControl(element) || isNonFillable(element, opts)) {
+    const driver = driverFor(element);
+    if ((!driver && !isSupportedControl(element)) || isNonFillable(element, opts)) {
       report.left.push({ fieldId: fill.fieldId, reason: 'non-fillable' });
       continue;
     }
 
-    const outcome = applyOne(element, fill);
+    const outcome = await applyOne(element, fill, driver, opts);
     if (outcome.ok) report.filled.push(fill.fieldId);
     else report.left.push({ fieldId: fill.fieldId, reason: outcome.reason });
+    // An aborted driver already reverted its own field; the rest of the plan is
+    // abandoned so a superseded fill never keeps writing.
+    if (!outcome.ok && outcome.aborted) break;
   }
 
   return report;
 }
 
-type Outcome = { ok: true } | { ok: false; reason: string };
+type Outcome = { ok: true } | { ok: false; reason: string; aborted?: boolean };
 
-function applyOne(element: Element, fill: Fill): Outcome {
+// Native controls are checked FIRST: an `<input type="checkbox" role="switch">`
+// is a real checkable and must keep the native click path, role attribute or not.
+async function applyOne(
+  element: Element,
+  fill: Fill,
+  driver: FillDriver | null,
+  opts: ApplyOptions,
+): Promise<Outcome> {
   if (element instanceof HTMLInputElement && isCheckable(element)) {
     return applyCheckable(element, fill.value);
   }
@@ -80,7 +112,68 @@ function applyOne(element: Element, fill: Fill): Outcome {
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
     return applyTextLike(element, fill.value);
   }
+  if (driver) return applyDriven(element, fill, driver, opts);
   return { ok: false, reason: 'unsupported' };
+}
+
+// --- driven ARIA widgets (RESEARCH §9) --------------------------------------
+
+async function applyDriven(
+  element: Element,
+  fill: Fill,
+  driver: FillDriver,
+  opts: ApplyOptions,
+): Promise<Outcome> {
+  const ctx = driverContext(opts.signal, opts.timeoutMs ?? DRIVER_TIMEOUT_MS);
+  const original = driver.capture(element);
+
+  try {
+    await driver.fill(element, fill.value, ctx);
+  } catch (error) {
+    await driver.revert(element, original, ctx);
+    if (isAbort(error)) return { ok: false, reason: 'aborted', aborted: true };
+    if (error instanceof DriverError) return { ok: false, reason: error.reason };
+    throw error;
+  }
+
+  // Identical gate to the native path: a value we can't CONFIRM was committed is
+  // reverted and the field reported left.
+  if (!confirms(driver.readback(element), fill.value)) {
+    await driver.revert(element, original, ctx);
+    return { ok: false, reason: 'readback-mismatch' };
+  }
+  return { ok: true };
+}
+
+// A driver readback confirms the plan only on an EXACT normalized match. The
+// normalization (case, diacritics, whitespace) exists because a widget
+// legitimately renders "México" for a planned "Mexico" — it is not a licence to
+// accept a near-miss. Containment deliberately does NOT appear here: matching an
+// option by containment is a decision the matcher makes once, having proved the
+// candidate unique, whereas accepting containment at CONFIRM time would let a
+// driver that landed on "Gold Plus" pass a plan that said "Gold". That is the
+// exact failure readback-or-revert exists to catch.
+function confirms(readback: string | string[] | null, planned: Fill['value']): boolean {
+  if (readback === null) return false;
+  const actual = Array.isArray(readback) ? readback : [readback];
+  // aria-checked is a tri-state ('true'/'false'/'mixed'), not a name: compare it
+  // as the boolean the plan meant, never as text.
+  if (actual.length === 1 && (actual[0] === 'true' || actual[0] === 'false')) {
+    return (actual[0] === 'true') === toBoolean(planned);
+  }
+  const wanted = toArray(planned).map(normalizeForConfirm).filter(Boolean);
+  if (wanted.length === 0) return false;
+  const got = actual.map(normalizeForConfirm);
+  return wanted.every((value) => got.includes(value));
+}
+
+function normalizeForConfirm(value: string): string {
+  return value
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
 }
 
 // --- text / textarea / email / tel / url / number / date / … ----------------

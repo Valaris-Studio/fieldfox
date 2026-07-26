@@ -1,10 +1,10 @@
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { CANNED } from './canned.mjs';
+import { CANNED, WIRE_SCHEMA_VERSION } from './canned.mjs';
 
 // Card: accept-documents. The document-attachment flow end to end on BOTH hosts:
-//   1. flag ON (plain index): a PDF attaches, the POSTed FillRequest carries
-//      schemaVersion 3 + a `documents` entry, and the mocked plan applies.
+//   1. flag ON (plain index): a PDF attaches, the POSTed FillRequest carries the
+//      current schemaVersion + a `documents` entry, and the mocked plan applies.
 //   2. flag OFF (formless): the same PDF is not accepted (friendly message) and
 //      the wire body carries no documents.
 //   3. flag ON: a text file's content is inlined into contextText between the
@@ -66,7 +66,7 @@ async function openPanel(page: Page): Promise<void> {
   await expect(fillButton).toBeInViewport();
 }
 
-test('flag ON (plain host): a PDF attaches, rides the wire as schemaVersion 3 + documents, and the plan applies', async ({ page }) => {
+test('flag ON (plain host): a PDF attaches, rides the wire with the current schemaVersion + documents, and the plan applies', async ({ page }) => {
   await page.goto(PLAIN_URL);
   const { fileInput, contextInput, fillButton, attachments, status } = ui(page);
   await openPanel(page);
@@ -81,7 +81,7 @@ test('flag ON (plain host): a PDF attaches, rides the wire as schemaVersion 3 + 
   await fillButton.click();
 
   const posted = await bodyPromise;
-  expect(posted.schemaVersion).toBe(3);
+  expect(posted.schemaVersion).toBe(WIRE_SCHEMA_VERSION);
   const documents = posted.documents as Array<{ name: string; mediaType: string; dataUrl: string }>;
   expect(documents).toHaveLength(1);
   expect(documents[0].name).toBe('sample.pdf');
