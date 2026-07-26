@@ -184,6 +184,13 @@ function mountFilteredCombobox(opts: FilteredComboOptions): {
         li.addEventListener('click', () => {
           li.setAttribute('aria-selected', 'true');
           input.value = name;
+          // Committing writes the input's value, and a CONTROLLED widget re-emits
+          // input for its own write — which schedules yet another filter pass. On
+          // the debounce variant that is the timer which outlives the commit and
+          // re-opens the popup over the filled field.
+          if (debounceMs !== undefined) {
+            input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+          }
           close();
         });
         return li;
