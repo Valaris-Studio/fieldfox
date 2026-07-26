@@ -187,7 +187,9 @@ function cannedFills(fields) {
         fills.push(set(f.id, CANNED.number));
         break;
       case 'textarea':
-        fills.push(set(f.id, CANNED.textarea));
+        // A driven rich-text editor rides the wire as a textarea (no schema
+        // change for v1.1c); its label is what tells the two apart here.
+        fills.push(set(f.id, /description/i.test(labels) ? CANNED.editorBody : CANNED.textarea));
         break;
       case 'select': {
         const value = CANNED.selectByName[f.name] ?? firstOption;

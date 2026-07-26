@@ -37,8 +37,9 @@ const SKIPPED_INPUT_TYPES = new Set([
 const KNOWN_HINT_SUFFIXES = new Set(['ignore', 'hint', 'format', 'example']);
 
 // ARIA widgets that aren't form-associated, so form.elements never yields them.
-// The driven ones (combobox/listbox/switch/checkbox) are fillable via drivers.ts;
-// textbox and contenteditable stay in the schema as leave-only model context.
+// The driven ones (combobox/listbox/switch/checkbox, plus a ProseMirror/tiptap
+// contenteditable) are fillable via drivers.ts; role=textbox and every other
+// contenteditable stay in the schema as leave-only model context.
 const WIDGET_SELECTOR =
   '[contenteditable], [role="textbox"], [role="combobox"], [role="listbox"], [role="switch"], [role="checkbox"]';
 const WIDGET_ROLES = new Set(['textbox', 'combobox', 'listbox', 'switch', 'checkbox']);
@@ -298,7 +299,13 @@ function kindOf(control: FormControl): FieldKind {
   }
   // A driven ARIA widget gets its own kind so the model targets it with an option
   // value rather than free text (RESEARCH §9.8); everything else stays 'other'.
-  return driverKindFor(control) ?? 'other';
+  const driven = driverKindFor(control);
+  // A driven rich-text editor rides `textarea` rather than earning a FieldKind of
+  // its own: it IS a multi-line free-text field, the model already plans one
+  // correctly, and reusing the kind keeps the wire contract (and SCHEMA_VERSION)
+  // untouched.
+  if (driven === 'contenteditable') return 'textarea';
+  return driven ?? 'other';
 }
 
 function selectOptions(select: HTMLSelectElement): FieldOption[] {
@@ -322,7 +329,10 @@ function selectOptions(select: HTMLSelectElement): FieldOption[] {
 // them (RESEARCH §2, §6).
 function computeFillable(control: HTMLElement, kind: FieldKind): boolean {
   if (kind === 'password') return false;
-  if (isContentEditable(control)) return false; // v1.1c, still leave-only
+  // v1.1c: a contenteditable is fillable only when a driver claims it — i.e. a
+  // ProseMirror/tiptap editor. Every other editable div (Slate, Lexical, a bare
+  // one) keeps the old hard false (RESEARCH §9.3).
+  if (isContentEditable(control) && !driverFor(control)) return false;
   // An ARIA widget is fillable exactly when a driver can drive it (RESEARCH §9.6);
   // an undriven one (role=textbox, an unknown widget) keeps the old hard false.
   // Native controls skip this entirely — `driverFor` declines them by design, and

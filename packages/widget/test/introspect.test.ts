@@ -219,6 +219,37 @@ describe('fillable flag', () => {
     expect(editable.fillable).toBe(false);
     expect(editable.labelCandidates).toContain('Bio');
   });
+
+  // A driven ProseMirror/tiptap editor rides kind `textarea`: it IS a multi-line
+  // free-text field, and describing it as one costs no wire change (RESEARCH §9.3).
+  test('a ProseMirror editor is discovered as a fillable textarea', () => {
+    const host = mount(`
+      <form>
+        <div id="pm" contenteditable="true" class="ProseMirror" data-ff-hint="Bio"><p>Draft</p></div>
+        <input name="ok" />
+      </form>
+    `);
+    (host.querySelector('#pm') as HTMLElement & { pmViewDesc?: unknown }).pmViewDesc = {};
+
+    const { schema } = introspectForms([host.querySelector('form')!]);
+    const editor = schema.fields.find((f) => f.kind === 'textarea')!;
+    expect(editor).toBeTruthy();
+    expect(editor.fillable).toBe(true);
+    expect(editor.currentValue).toBe('Draft');
+    expect(editor.labelCandidates).toContain('Bio');
+  });
+
+  test('a Slate contenteditable stays a non-fillable other', () => {
+    const host = mount(`
+      <form>
+        <div contenteditable="true" data-slate-editor="true">Draft</div>
+        <input name="ok" />
+      </form>
+    `);
+    const { schema } = introspectForms([host.querySelector('form')!]);
+    const editable = schema.fields.find((f) => f.kind === 'other')!;
+    expect(editable.fillable).toBe(false);
+  });
 });
 
 describe('unknown data-ff-* suffix', () => {

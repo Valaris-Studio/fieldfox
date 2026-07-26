@@ -104,12 +104,78 @@ function committedText(): string {
   return document.getElementById('value')?.textContent ?? '';
 }
 
+interface EditorOptions {
+  text?: string;
+  // Which editor library the fixture impersonates. Only 'prosemirror' is driven;
+  // the others exist to prove the detection stays narrow.
+  flavour?: 'prosemirror' | 'slate' | 'bare';
+  // An editor that mangles what it is handed (normalizes, truncates, keeps a stale
+  // paragraph) — the partial-insert case the readback gate must reject. Applied to
+  // EVERY insert including the revert's, so the revert has to cope with an editor
+  // that stays broken rather than one that conveniently recovers.
+  mangle?: (inserted: string) => string;
+  // Fires on the insert that carries `text`, so a test can supersede a fill at
+  // the exact moment the editor would commit.
+  onInsert?: (text: string) => void;
+}
+
+// A contenteditable host plus the execCommand implementation jsdom lacks.
+// The stub is the editor under test: a real ProseMirror routes insertText through
+// beforeinput → its transaction pipeline → a re-rendered DOM, and the only part of
+// that the driver may rely on is "textContent ends up holding the text".
+function mountEditor(opts: EditorOptions = {}): HTMLElement {
+  const { text = '', flavour = 'prosemirror', mangle, onInsert } = opts;
+  const marker =
+    flavour === 'prosemirror'
+      ? 'class="ProseMirror"'
+      : flavour === 'slate'
+        ? 'data-slate-editor="true"'
+        : '';
+  document.body.innerHTML = `<div id="ed" contenteditable="true" ${marker} aria-label="Notes"><p>${text}</p></div>`;
+  const el = document.getElementById('ed') as HTMLElement;
+  if (flavour === 'prosemirror') {
+    // ProseMirror hangs its view description off the host node; the driver reads it
+    // as the "this is really a PM instance" witness, not just a CSS class anyone
+    // could copy.
+    (el as HTMLElement & { pmViewDesc?: unknown }).pmViewDesc = { node: {} };
+  }
+
+  stubExecCommand((inserted) => {
+    onInsert?.(inserted);
+    const paragraph = el.firstElementChild ?? el;
+    paragraph.textContent = mangle ? mangle(inserted) : inserted;
+  });
+  return el;
+}
+
+// insertText only lands when the editor is focused AND something is selected —
+// the same precondition a real browser enforces (RESEARCH §9.3). The stub asserts
+// it so a driver that forgets the caret step fails here rather than in production.
+function stubExecCommand(apply: (text: string) => void): void {
+  const impl = (command: string, _ui?: boolean, value?: string): boolean => {
+    if (command !== 'insertText') return false;
+    const selection = document.getSelection();
+    if (!selection || selection.rangeCount === 0) return false;
+    apply(value ?? '');
+    return true;
+  };
+  (document as Document & { execCommand: typeof impl }).execCommand = impl;
+}
+
+function editorText(): string {
+  return document.getElementById('ed')?.textContent ?? '';
+}
+
 beforeEach(() => {
   document.body.innerHTML = '';
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  // jsdom ships no execCommand at all, so the fixture ADDS the property rather
+  // than spying on one — deleting is the only honest restore.
+  delete (document as Partial<Document>).execCommand;
+  document.getSelection()?.removeAllRanges();
   document.body.innerHTML = '';
 });
 
@@ -480,6 +546,216 @@ test('a combobox the host marked aria-readonly is never driven', async () => {
 
   expect(committedText()).toBe('Low');
   expect(report.left[0]).toMatchObject({ fieldId: 'ff-0', reason: 'non-fillable' });
+});
+
+// --- contenteditable driver (RESEARCH §9.3) ---------------------------------
+
+test('driverKindFor drives a ProseMirror editor and NOTHING else contenteditable', () => {
+  document.body.innerHTML = `
+    <div id="pm" contenteditable="true" class="ProseMirror"></div>
+    <div id="pm-class-only" contenteditable="true" class="ProseMirror"></div>
+    <div id="slate" contenteditable="true" data-slate-editor="true"></div>
+    <div id="lexical" contenteditable="true" data-lexical-editor="true"></div>
+    <div id="bare" contenteditable="true"></div>
+    <div id="plaintext" contenteditable="plaintext-only"></div>
+    <div id="pm-not-editable" class="ProseMirror"></div>`;
+  (document.getElementById('pm') as HTMLElement & { pmViewDesc?: unknown }).pmViewDesc = {};
+  (document.getElementById('pm-not-editable') as HTMLElement & { pmViewDesc?: unknown }).pmViewDesc =
+    {};
+
+  const kind = (id: string): string | null => driverKindFor(document.getElementById(id)!);
+  expect(kind('pm')).toBe('contenteditable');
+  // The class alone is enough: tiptap renders it before pmViewDesc is attached on
+  // the very first paint, and no other library claims that exact class name.
+  expect(kind('pm-class-only')).toBe('contenteditable');
+  expect(kind('slate')).toBeNull();
+  expect(kind('lexical')).toBeNull();
+  expect(kind('bare')).toBeNull();
+  expect(kind('plaintext')).toBeNull();
+  expect(kind('pm-not-editable')).toBeNull(); // a PM read-only render target
+});
+
+test('contenteditable driver replaces the body and reads it back', async () => {
+  mountEditor({ text: 'old draft' });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'A tidy new summary.' }),
+    resolveById({ 'ff-0': '#ed' }),
+  );
+
+  expect(editorText()).toBe('A tidy new summary.');
+  expect(report.filled).toContain('ff-0');
+});
+
+test('contenteditable driver fills an empty editor', async () => {
+  mountEditor();
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'First words.' }),
+    resolveById({ 'ff-0': '#ed' }),
+  );
+
+  expect(editorText()).toBe('First words.');
+  expect(report.filled).toContain('ff-0');
+});
+
+// The editor may re-wrap what it is given (a paragraph split, an indent) without
+// changing the words; that is a successful fill, and the only tolerance allowed.
+test('contenteditable driver accepts a whitespace-normalized readback', async () => {
+  mountEditor({ mangle: (text) => `  ${text.replace(' ', '\n  ')}\n` });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'Hello world' }),
+    resolveById({ 'ff-0': '#ed' }),
+  );
+
+  expect(report.filled).toContain('ff-0');
+});
+
+// A BARE contenteditable has no transaction pipeline we can confirm against, so
+// it is not driven at all — it keeps today's fillable:false and is never touched.
+test('a bare contenteditable is never driven or written', async () => {
+  const el = mountEditor({ text: 'untouched', flavour: 'bare' });
+  const focus = vi.spyOn(el, 'focus');
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'new text' }),
+    resolveById({ 'ff-0': '#ed' }),
+  );
+
+  expect(editorText()).toBe('untouched');
+  expect(focus).not.toHaveBeenCalled();
+  expect(driverFor(el)).toBeNull();
+  expect(report.filled).toHaveLength(0);
+  expect(report.left[0]).toMatchObject({ fieldId: 'ff-0', reason: 'non-fillable' });
+});
+
+// Slate builds its own string-node structure and drops a raw inserted text node
+// (RESEARCH §9.3), so execCommand is unreliable there by design, not by accident.
+test('a Slate editor is never driven', async () => {
+  const el = mountEditor({ text: 'untouched', flavour: 'slate' });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'new text' }),
+    resolveById({ 'ff-0': '#ed' }),
+  );
+
+  expect(editorText()).toBe('untouched');
+  expect(driverFor(el)).toBeNull();
+  expect(report.filled).toHaveLength(0);
+});
+
+// The load-bearing test. A truncated insert reads back as plausible prose, so
+// nothing downstream could ever catch it — the gate must, and the editor must be
+// left holding exactly what it started with.
+test('a mangled insert REVERTS to the original and leaves the field', async () => {
+  mountEditor({ text: 'original body', mangle: (text) => text.slice(0, 8) });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'a much longer replacement body' }),
+    resolveById({ 'ff-0': '#ed' }),
+  );
+
+  expect(editorText()).toBe('original body');
+  expect(report.filled).toHaveLength(0);
+  expect(report.left[0]).toMatchObject({ fieldId: 'ff-0', reason: 'readback-mismatch' });
+});
+
+test('an editor that silently drops the insert leaves the field empty as found', async () => {
+  mountEditor({ mangle: () => '' });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'never lands' }),
+    resolveById({ 'ff-0': '#ed' }),
+  );
+
+  expect(editorText()).toBe('');
+  expect(report.filled).toHaveLength(0);
+  expect(report.left[0]).toMatchObject({ fieldId: 'ff-0', reason: 'readback-mismatch' });
+});
+
+// An editor with no execCommand support at all (or one that refuses the command)
+// never moves, and the fill must not fall back to a DOM write.
+test('an editor whose execCommand is unavailable leaves the field untouched', async () => {
+  mountEditor({ text: 'original body' });
+  delete (document as Partial<Document>).execCommand;
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'new body' }),
+    resolveById({ 'ff-0': '#ed' }),
+    { timeoutMs: 40 },
+  );
+
+  expect(editorText()).toBe('original body');
+  expect(report.filled).toHaveLength(0);
+  expect(report.left[0]).toMatchObject({ fieldId: 'ff-0', reason: 'insert-unsupported' });
+});
+
+test('abort mid-fill leaves the editor with its original content', async () => {
+  const controller = new AbortController();
+  mountEditor({
+    text: 'original body',
+    onInsert: (text) => {
+      // Superseded at the instant the editor commits the new text — the revert has
+      // to run even though the fill itself technically "landed".
+      if (text.includes('superseded')) controller.abort();
+    },
+  });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'a superseded draft' }),
+    resolveById({ 'ff-0': '#ed' }),
+    { signal: controller.signal, timeoutMs: 40 },
+  );
+
+  expect(editorText()).toBe('original body');
+  expect(report.filled).toHaveLength(0);
+  expect(report.left[0]).toMatchObject({ fieldId: 'ff-0', reason: 'aborted' });
+});
+
+// The cooperative revert: the editor rejected the planned text but honours the
+// restore, so the original goes back through execCommand — the editor's own
+// pipeline — and its document model stays consistent with the DOM.
+test('revert restores the original through the editor when the editor accepts it', async () => {
+  const original = 'Dear  Ada,\n  regards';
+  const el = mountEditor({
+    text: original,
+    mangle: (text) => (text === original ? text : 'mangled'),
+  });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'something else' }),
+    resolveById({ 'ff-0': '#ed' }),
+  );
+
+  expect(el.textContent).toBe(original);
+  expect(report.left[0]).toMatchObject({ fieldId: 'ff-0', reason: 'readback-mismatch' });
+});
+
+// The uncooperative one: an editor that mangles the restore too leaves the driver
+// no in-pipeline recourse, and a visibly wrong body is the one outcome worse than
+// a DOM write the editor might re-render over.
+test('revert restores the exact original even when the editor mangles the restore', async () => {
+  const el = mountEditor({ text: 'Dear  Ada,\n  regards', mangle: () => 'garbage' });
+  const before = el.textContent;
+
+  await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'something else' }),
+    resolveById({ 'ff-0': '#ed' }),
+  );
+
+  expect(el.textContent).toBe(before);
+});
+
+test('the contenteditable driver never touches the editor outside a fill', () => {
+  const el = mountEditor({ text: 'quiet' });
+  const focus = vi.spyOn(el, 'focus');
+
+  driverKindFor(el);
+  driverFor(el);
+
+  expect(focus).not.toHaveBeenCalled();
+  expect(editorText()).toBe('quiet');
 });
 
 test('the driver NEVER opens a widget outside an actual fill (no introspection probe)', async () => {

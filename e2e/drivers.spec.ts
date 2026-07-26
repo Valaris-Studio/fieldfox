@@ -18,6 +18,7 @@ const ARIA_URL = 'http://localhost:8080/examples/plain-html/aria-widgets.html';
 // Its own route: the Radix fixture must not share a page with the profile form,
 // whose bare `field-fox [part="…"]` locators are the framework-matrix contract.
 const RADIX_URL = 'http://localhost:5173/radix';
+const EDITOR_URL = 'http://localhost:5173/editor';
 const SERVER_PORT = Number(process.env.FIELDFOX_E2E_SERVER_PORT ?? 8794);
 
 // Same endpoint-port remap as fill.spec.ts: the fixtures hardcode :8787 while
@@ -104,4 +105,30 @@ test('react-host Radix: portalled Select and Switch fill through the real design
   await expect(page.locator('#radix-state')).toContainText('"backups":true');
 
   await expect(page.locator('[role="listbox"]')).toHaveCount(0);
+});
+
+// Card 5594ae4b (v1.1c). Real tiptap, because ProseMirror keeps a document model
+// separate from the DOM and discards out-of-band writes — only a real editor can
+// prove the execCommand path reaches the transaction pipeline. The bare
+// contenteditable on the same page is the negative control.
+test('react-host tiptap: the rich-text editor fills; a bare contenteditable is left alone', async ({
+  page,
+}) => {
+  await page.goto(EDITOR_URL);
+
+  const notesBefore = await page.locator('#internal-notes').textContent();
+
+  await openPanelAndFill(
+    page,
+    'Disk pressure on node 7 triggered a failover at 02:14 UTC. Title it "Node 7 failover".',
+  );
+  await expect(ui(page).status).toContainText('Review, then submit', { timeout: 15_000 });
+
+  // The text must be in the EDITOR'S model, not merely in the DOM the driver
+  // touched — clicking Save reads it back through tiptap's own getText().
+  await page.locator('#editor-section button', { hasText: 'Save report' }).click();
+  await expect(page.locator('#editor-saved')).toHaveText(CANNED.editorBody);
+
+  // No ProseMirror behind it → never driven, whatever the plan said.
+  await expect(page.locator('#internal-notes')).toHaveText(notesBefore!.trim());
 });

@@ -34,6 +34,9 @@ export const CANNED = {
   // reads "São Paulo".
   comboboxDiacritic: 'Sao Paulo',
   switchOnLabels: /backups/i,
+  // Rich-text (tiptap) body. Plain text on purpose: the driver inserts through
+  // the browser's native input pipeline, never markup.
+  editorBody: 'Disk pressure on node 7 triggered a failover at 02:14 UTC.',
   radioByName: { session: 'afternoon' },
   // Checkboxes whose label matches get `set true`; all others get an explicit skip.
   checkboxOnLabels: /woodworking|fully remote/i,

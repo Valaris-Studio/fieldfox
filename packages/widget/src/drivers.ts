@@ -1,7 +1,7 @@
 import type { Fill } from '@fieldfox/shared';
 
-// Card v1.1a — fill drivers for the ARIA widgets the native executor can't touch
-// (RESEARCH §9). A driver drives the VISIBLE UI exactly like a user would —
+// Cards v1.1a / v1.1c — fill drivers for the widgets the native executor can't
+// touch (RESEARCH §9). A driver drives the VISIBLE UI exactly like a user would —
 // open, find the option by accessible name, activate, read the committed value
 // back — because a custom widget's real state lives in a framework model no
 // outside script can reach (§9.5: this is what Playwright does too).
@@ -32,6 +32,12 @@ const PLAIN_CLICK_GRACE_MS = 60;
 // window even when the fill already exhausted the deadline.
 const REVERT_TIMEOUT_MS = 200;
 
+// Consecutive unchanged rAF ticks that count a rich-text editor's DOM as settled
+// (§9.3). Two, because a single tick can fall between an editor's beforeinput
+// handler and the render its transaction schedules, which would read the
+// pre-render DOM as "final".
+const SETTLE_TICKS = 2;
+
 // A driver's captured pre-fill state, handed back to `revert` so an aborted or
 // failed interaction restores exactly what was there (§9.7).
 export interface CapturedState {
@@ -60,7 +66,7 @@ export interface FillDriver {
   revert(el: Element, original: CapturedState, ctx: DriverContext): Promise<void>;
 }
 
-export type DriverKind = 'combobox' | 'switch';
+export type DriverKind = 'combobox' | 'switch' | 'contenteditable';
 
 // A signal the driver layer raises to distinguish "the widget never got there in
 // time" (→ reason 'driver-timeout') from "no option matched the model's value"
@@ -78,6 +84,7 @@ export function driverFor(el: Element): FillDriver | null {
   if (isNativeControl(el)) return null; // a stray role= on a real <input> stays native
   if (switchDriver.detect(el)) return switchDriver;
   if (comboboxDriver.detect(el)) return comboboxDriver;
+  if (contentEditableDriver.detect(el)) return contentEditableDriver;
   return null;
 }
 
@@ -85,6 +92,7 @@ export function driverKindFor(el: Element): DriverKind | null {
   if (isNativeControl(el)) return null;
   if (switchDriver.detect(el)) return 'switch';
   if (comboboxDriver.detect(el)) return 'combobox';
+  if (contentEditableDriver.detect(el)) return 'contenteditable';
   return null;
 }
 
@@ -275,6 +283,119 @@ async function closePopup(el: Element, listbox: Element | null): Promise<void> {
 function isOpen(el: Element, listbox: Element | null): boolean {
   if (el.getAttribute('aria-expanded') === 'true') return true;
   return listbox !== null && listbox !== el && isRendered(listbox) && optionsIn(listbox).length > 0;
+}
+
+// --- ProseMirror / tiptap contenteditable (§9.3) ----------------------------
+
+// Detection is POSITIVE and narrow, and that is the entire safety story of this
+// driver: there is no editor-agnostic insertion primitive (§9.3), so "it's
+// contenteditable, let's try" would silently corrupt the editors execCommand is
+// known to break. Slate rebuilds an inserted raw text node into its own string
+// structure and Lexical only accepts commands on its private bus — both must fall
+// through to `fillable:false`, unchanged.
+const contentEditableDriver: FillDriver = {
+  detect(el) {
+    if (!isEditableHost(el)) return false;
+    // ProseMirror stamps its host with this class and attaches `pmViewDesc` (its
+    // view-description tree) to the same node; tiptap is ProseMirror underneath, so
+    // both markers hold there too. pmViewDesc alone is not enough — a PM render
+    // target that isn't editable must stay untouched, which isEditableHost covers.
+    return el.classList.contains('ProseMirror') || 'pmViewDesc' in el;
+  },
+
+  capture(el) {
+    return { committedText: el.textContent ?? '' };
+  },
+
+  async fill(el, value, ctx) {
+    insertText(el, toScalar(value));
+    await settle(el, toScalar(value), ctx);
+  },
+
+  readback(el) {
+    return collapse(el.textContent ?? '');
+  },
+
+  // Restoring means a SECOND full replacement, not an undo: execCommand('undo')
+  // pops the editor's own history stack, which — if our insert never made it onto
+  // that stack — would unwind whatever the USER did before we arrived.
+  async revert(el, original) {
+    const target = original.committedText ?? '';
+    if ((el.textContent ?? '') === target) return;
+    const ctx = driverContext(undefined, REVERT_TIMEOUT_MS);
+    try {
+      insertText(el, target);
+      await settle(el, target, ctx);
+    } catch {
+      swallow(); // a failed restore falls through to the DOM write below
+    }
+    // Last resort for an editor that mangles the restore too. A raw DOM write is
+    // normally forbidden here (the editor's model discards it), but a revert has no
+    // further recourse and a visibly wrong body is worse than one the editor's
+    // model may re-render over.
+    if (!matches(el, target)) el.textContent = target;
+  },
+};
+
+// ProseMirror commits asynchronously — it handles beforeinput, applies a
+// transaction, then re-renders the DOM on a later tick — so the text is not there
+// the instant execCommand returns. Wait for the exact text, or for the DOM to stop
+// changing, whichever comes first: a mangled insert SETTLES on the wrong text and
+// must reach the confirm gate as a mismatch, not expire as a timeout.
+async function settle(el: Element, planned: string, ctx: DriverContext): Promise<void> {
+  let previous = el.textContent;
+  let stableTicks = 0;
+  await pollFor(() => {
+    if (matches(el, planned)) return true;
+    const current = el.textContent;
+    if (current === previous) stableTicks++;
+    else {
+      previous = current;
+      stableTicks = 0;
+    }
+    return stableTicks >= SETTLE_TICKS ? true : null;
+  }, ctx);
+}
+
+function isEditableHost(el: Element): boolean {
+  const attr = el.getAttribute('contenteditable');
+  return attr === '' || attr === 'true' || attr === 'plaintext-only';
+}
+
+// execCommand — deprecated, ubiquitous, and the only outside-instance primitive
+// that works (§9.3). It drives the browser's NATIVE beforeinput/input pipeline,
+// which is the one thing ProseMirror's transaction system listens to; a direct
+// textContent/innerHTML write is reconciled away by the editor's own model on its
+// next render. It requires a focused host with a live selection, so the caret is
+// placed first — select-all, so the insert REPLACES rather than appends.
+function insertText(el: Element, text: string): void {
+  (el as HTMLElement).focus?.();
+  selectAll(el);
+  const inserted = document.execCommand?.('insertText', false, text);
+  // An editor that refuses the command must not be papered over with a DOM write:
+  // that write would be discarded by the editor's model while readback briefly saw
+  // it, which is exactly the wrong-but-plausible outcome the gate exists to stop.
+  if (!inserted) throw new DriverError('insert-unsupported');
+}
+
+function selectAll(el: Element): void {
+  const selection = document.getSelection();
+  if (!selection) throw new DriverError('insert-unsupported');
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+// EXACT normalized equality, deliberately: §9.3 proposed a contains/normalized
+// match, and we do not implement it. A partial insert (a truncation, a surviving
+// stale paragraph) reads back as perfectly plausible prose, so no later gate could
+// distinguish it from a correct fill — the same reason containment was removed
+// from the combobox confirm. Collapsing whitespace is the one tolerance kept: the
+// editor legitimately re-wraps paragraphs without changing a word. If an editor
+// normalizes further than that, we LEAVE the field, which is the correct outcome.
+function matches(el: Element, planned: string): boolean {
+  return collapse(el.textContent ?? '') === collapse(planned);
 }
 
 // --- accessible-name matching (§9.1: options are targeted by NAME, never index)
