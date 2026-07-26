@@ -1069,3 +1069,101 @@ flagged below.
    fixtures only, accepting lower fidelity to real Radix portal/BubbleInput)?
 5. **Per-field driver timeout.** Proposed 1500 ms before a driver gives up and
    leaves the field. Right for the "quiet, non-annoying" UX, or tighter/looser?
+
+### 9.15 As-built corrections (post-implementation, 2026-07-26)
+
+§9 above is the design record and is left as written. These are the places the
+shipped code (75af2eb, 67afd74, 6bc41bb) deliberately diverges from it. All five
+open questions were decided by Sebastian on 2026-07-26; the board holds the
+decision note.
+
+**§9.8's schema bump is off by one.** It says bump to 3. The tree was already at
+3 (the `documents` field), so the drivers bump went **3 → 4** and the server
+serves majors {1, 2, 3, 4}.
+
+**§9.9's lazy chunk does not exist.** `packages/widget/vite.config.ts` is Vite
+lib mode with a single entry emitting one ES and one IIFE bundle; there are no
+dynamic imports anywhere in `packages/widget/src`, and `fill.ts` is a static
+import in `element.ts`. Drivers therefore ship **eager**, and they do consume the
+35 KB eager budget. §9.9's size estimate held up well: measured **+1596 B** for
+v1.1a, **+311 B** for v1.1c, against a 4–6 KB guess for all four slices. Total
+eager bundle 16786 → 18693 B. Splitting a lazy chunk is a distribution-shape
+change (a second file every self-host must serve, plus its SRI story) and is
+deferred to its own card.
+
+**§9.1's "conservative containment pass" was NOT implemented, deliberately.**
+The spec called for a fuzzy pass accepting an option whose normalized name
+contains the planned value when exactly one matches. It was built, then removed
+after an adversarial probe: a plan of `"Gold"` against a listbox offering only
+`"Gold Plus"` committed Gold Plus and reported the field **filled**.
+
+Containment is the one match class `readback-or-revert` cannot backstop. Every
+other fold (case, diacritics, whitespace) is a different way of *writing the same
+option*, so folding it still answers "did the model name THIS option?".
+Containment answers a different question, and a wrong-but-unique pick reads back
+as a correct one — the readback of the wrongly-committed "Gold Plus" is exactly
+what a correct "Gold Plus" fill would produce. Matching now stops at normalized
+equality; a near-miss leaves the field.
+
+**The known cost:** under approach B (§9.8) the model receives no option list, so
+near-misses are the *common* case rather than the edge case, and "High" →
+"High priority" no longer fills. The safe lever for that coverage is the
+author-hint escape hatch §9.8 already names — `data-ff-hint` enumerating allowed
+values — not a matcher that guesses. §9.10's 9/10 projection for the Backplane
+dialog is therefore unverified and needs a real pilot re-run to confirm.
+
+**§9.3's contains/normalized readback was overridden** to exact normalized
+equality (whitespace collapse + trim), for the same reason. A truncated insert
+reads back as plausible prose that no downstream gate could distinguish from
+success.
+
+**§9.3 has no answer for how `fill` waits, and the obvious answer is harmful.**
+Polling for the exact planned text makes a *mangled* insert expire as
+`driver-timeout` instead of reaching the confirm gate as the `readback-mismatch`
+it actually is. The shipped `settle()` resolves on an exact match **or** two
+consecutive unchanged animation-frame ticks, so a mangled insert settles on the
+wrong text and is rejected honestly. One tick is not enough: it can fall between
+ProseMirror's `beforeinput` handler and the render its transaction schedules.
+
+**§9.3's revert has an unacknowledged dead end.** "Restore via a second
+execCommand" assumes an editor that mangles the fill will restore faithfully; it
+is broken in one direction, not selectively. The shipped revert falls back to a
+raw `textContent` write as a last resort — normally forbidden, since the editor's
+model discards out-of-band writes, but a revert has no further recourse and a
+visibly wrong body is the worse outcome. `execCommand('undo')` is deliberately
+NOT used: our insert may never have reached the editor's history stack, so an
+undo could unwind the *user's* prior work.
+
+**§9.2's hidden-native-mirror corroboration is not implemented, and should not
+be.** The empty-controlled-Select bug it cites (radix-ui/primitives#3521) makes
+the mirror unsafe as a signal. The two witnesses in use are the ones §9.2 names
+as primary: the activated option's `aria-selected` and the trigger's committed
+text.
+
+**§9.7 doesn't account for a revert's budget.** A revert issued after a timeout
+has, by definition, no deadline left, so it would time out immediately and leave
+the widget in the state the failed fill produced — the outcome the invariant
+forbids. Reverts get their own small fresh window (200 ms) and drop the abort
+signal, or a superseded fill leaves a switch flipped.
+
+**§9.6's integration list missed introspection.** `introspect.ts` enumerated only
+`[contenteditable], [role=textbox|combobox|listbox]`, so a `role="switch"` or
+`role="checkbox"` element never entered the schema at all and the switch driver
+would have been dead code in production (and Vario's DPA `role=checkbox` button
+unreachable). Both roles are now in the walker and in `isEnumerableControl`; a
+native `<input>` carrying a stray role stays on the native path.
+
+**contenteditable rides kind `'textarea'`** rather than earning a `FieldKind`
+member, so no second schema bump. It is semantically a multi-line free-text field
+and the model already plans those correctly. `DriverKind` keeps an internal
+`'contenteditable'` member for the registry and tests; the wire never sees it.
+
+**An editable combobox is an `HTMLInputElement`**, so `isNativeControl` routes it
+to the native path — the text is set but the widget's own selection never
+commits. Narrowing that guard (a text input is native *unless* it carries
+`role="combobox"` and references a listbox) is the substance of slice v1.1b.
+
+**Not a §9 error, but it shapes the code:** jsdom has no `PointerEvent`.
+`escalatedClick` constructs one when available and falls back to a `MouseEvent`
+of the same type name; dispatch is by type string, so a `pointerdown` listener
+still fires under test and the escalation path is genuinely covered.
