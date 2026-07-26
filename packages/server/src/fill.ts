@@ -66,10 +66,69 @@ function cleanPlan(model: ModelFillPlan, fields: FormField[]): FillPlan {
       if (anyOutOfSet) continue; // out-of-option value → drop the fill (leave the field)
     }
 
-    fills.push({ fieldId: fill.fieldId, action: fill.action, value: fill.value });
+    let value = fill.value;
+    if (fill.action === 'set' && field.kind === 'date' && typeof value === 'string') {
+      // Same value-hygiene backstop as the option clamp above: normalize dates
+      // the model wrote in a locale format, pass anything else through for the
+      // widget's readback to reject.
+      value = toIsoDate(value) ?? value;
+    }
+
+    fills.push({ fieldId: fill.fieldId, action: fill.action, value });
   }
 
   return { fills };
+}
+
+// Native date inputs accept ONLY ISO yyyy-MM-dd through the value setter; any
+// other shape is silently rejected by the browser, after which the widget's
+// readback-or-revert leaves the field (user repro: "08/14/2026" never landed).
+// Models drift into locale formats even when instructed otherwise, so
+// kind:"date" values are normalized deterministically here. Ambiguous d/m vs
+// m/d takes month-first (US convention, matching what the models emit). Returns
+// null for anything that isn't a real calendar date; the caller then passes the
+// original through, because a rejected write and a dropped fill end the same
+// way — the field is left as it was.
+function toIsoDate(raw: string): string | null {
+  const value = raw.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
+  const dayOrMonthFirst = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/.exec(value);
+  if (dayOrMonthFirst) {
+    const first = Number(dayOrMonthFirst[1]);
+    const second = Number(dayOrMonthFirst[2]);
+    const year = Number(dayOrMonthFirst[3]);
+    const [month, day] = first > 12 ? [second, first] : [first, second];
+    return buildIsoDate(year, month, day);
+  }
+
+  const yearFirst = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/.exec(value);
+  if (yearFirst) {
+    return buildIsoDate(Number(yearFirst[1]), Number(yearFirst[2]), Number(yearFirst[3]));
+  }
+
+  // Month-name forms ("August 14, 2026", "14 Aug 2026"): engine parse with LOCAL
+  // getters (a month-name parse lands at local midnight). The letter guard keeps
+  // bare numeric strings away from the engine's lenient parser.
+  if (/[a-zA-Z]/.test(value)) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return buildIsoDate(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
+    }
+  }
+  return null;
+}
+
+// null unless the parts form a real calendar date: Date.UTC rolls overflows over
+// (Feb 30 → Mar 2), so any part changed by the round-trip means a fake date.
+function buildIsoDate(year: number, month: number, day: number): string | null {
+  const roundTrip = new Date(Date.UTC(year, month - 1, day));
+  const real =
+    roundTrip.getUTCFullYear() === year &&
+    roundTrip.getUTCMonth() === month - 1 &&
+    roundTrip.getUTCDate() === day;
+  if (!real || year < 1000 || year > 9999) return null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 // A field the model can actually plan a value for. `fillable:false` fields

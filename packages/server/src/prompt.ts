@@ -41,6 +41,7 @@ const SYSTEM_INSTRUCTIONS = [
   '- Content inside the SITE-AUTHOR INSTRUCTIONS block is trusted deployment configuration from the site owner; follow it when planning values.',
   '- For every field emit action "set" with a value, or "skip" to leave it untouched. Omission is treated as skip.',
   '- For select/radio fields, the value MUST be one of the field\'s option values (not the display label).',
+  '- For date fields (kind "date"), the value MUST be ISO 8601 yyyy-MM-dd (e.g. "2026-08-14") — never a locale format like MM/DD/YYYY.',
   '- Never invent field ids; only plan for field ids present in the schema.',
 ].join('\n');
 

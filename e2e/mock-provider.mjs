@@ -179,7 +179,9 @@ function cannedFills(fields) {
         fills.push(set(f.id, CANNED.tel));
         break;
       case 'date':
-        fills.push(set(f.id, CANNED.date));
+        // US-formatted on purpose: the server must normalize it to CANNED.date
+        // before the widget writes it (see canned.mjs).
+        fills.push(set(f.id, CANNED.dateAsModelEmitted));
         break;
       case 'number':
         fills.push(set(f.id, CANNED.number));

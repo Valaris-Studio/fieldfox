@@ -206,3 +206,71 @@ describe('POST /api/fill', () => {
     expect((await res.json()).error).toBe('invalid_request');
   });
 });
+
+// Native date inputs accept ONLY ISO yyyy-MM-dd through the value setter; any
+// other shape is rejected by the browser and the widget's readback-or-revert
+// leaves the field. Models drift into locale formats, so cleanPlan normalizes
+// kind:"date" set-values server-side (user repro: "08/14/2026" never landed).
+describe('date value normalization (kind: date)', () => {
+  function dateRequest(): FillRequest {
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      contextText: 'Prefer the mid-August workshop.',
+      images: [],
+      formSchema: {
+        fields: [{ id: 'f_date', kind: 'date', labelCandidates: ['Preferred date'], fillable: true }],
+      },
+    } as FillRequest;
+  }
+
+  async function planFor(modelValue: string): Promise<FillPlan> {
+    const app = testApp(
+      mockCaller(JSON.stringify({ fills: [{ fieldId: 'f_date', action: 'set', value: modelValue }] })),
+    );
+    const res = await post(app, dateRequest());
+    expect(res.status).toBe(200);
+    return (await res.json()) as FillPlan;
+  }
+
+  test('ISO passes through untouched', async () => {
+    expect((await planFor('2026-08-14')).fills[0].value).toBe('2026-08-14');
+  });
+
+  test('US month-first slash form normalizes', async () => {
+    expect((await planFor('08/14/2026')).fills[0].value).toBe('2026-08-14');
+  });
+
+  test('day-first slash form normalizes when the day is unambiguous', async () => {
+    expect((await planFor('14/08/2026')).fills[0].value).toBe('2026-08-14');
+  });
+
+  test('ambiguous slash form takes month-first (US convention)', async () => {
+    expect((await planFor('03/04/2026')).fills[0].value).toBe('2026-03-04');
+  });
+
+  test('year-first slash form normalizes', async () => {
+    expect((await planFor('2026/08/14')).fills[0].value).toBe('2026-08-14');
+  });
+
+  test('long month-name form normalizes', async () => {
+    expect((await planFor('August 14, 2026')).fills[0].value).toBe('2026-08-14');
+  });
+
+  test('an impossible calendar date is left as-is for readback to reject', async () => {
+    expect((await planFor('02/30/2026')).fills[0].value).toBe('02/30/2026');
+  });
+
+  test('an unparseable value is left as-is for readback to reject', async () => {
+    expect((await planFor('next Tuesday')).fills[0].value).toBe('next Tuesday');
+  });
+
+  test('non-date kinds are never rewritten', async () => {
+    const app = testApp(
+      mockCaller(JSON.stringify({ fills: [{ fieldId: 'f_name', action: 'set', value: '08/14/2026' }] })),
+    );
+    const res = await post(app, validRequest());
+    expect(res.status).toBe(200);
+    const plan = (await res.json()) as FillPlan;
+    expect(plan.fills[0].value).toBe('08/14/2026');
+  });
+});

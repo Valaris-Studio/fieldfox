@@ -8,6 +8,10 @@ export const CANNED = {
   email: 'jane@doe.dev',
   tel: '+1 415 555 0123',
   date: '2026-08-15',
+  // What the mock "model" EMITS for date fields — deliberately US-formatted, the
+  // way real models drift. The server normalizes it to the ISO `date` above, so
+  // specs asserting `date` on the input prove that normalization end to end.
+  dateAsModelEmitted: '08/15/2026',
   textarea: 'Filled by the fieldfox e2e mock provider.',
   number: '42',
   // Keyed by the introspected field `name`; fallback is the first non-empty option.
