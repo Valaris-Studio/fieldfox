@@ -28,7 +28,14 @@ export const CANNED = {
   // accessible name at fill time. `comboboxUnmatchable` is the leave-semantics
   // probe: a plausible value that exists in no listbox, which must leave the
   // field untouched rather than force a wrong pick.
-  comboboxByLabel: { region: 'Frankfurt', tier: 'Gold' },
+  // `owner` is an editable combobox (the driver types, then picks); `datacenter`
+  // is virtualized, so its match only exists in the DOM after scrolling.
+  comboboxByLabel: {
+    region: 'Frankfurt',
+    tier: 'Gold',
+    owner: 'Camila Rojas',
+    datacenter: 'Quito 10',
+  },
   comboboxUnmatchable: 'Atlantis',
   // Diacritic-insensitive matching: the model writes "Sao Paulo", the option
   // reads "São Paulo".

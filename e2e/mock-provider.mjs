@@ -217,6 +217,14 @@ function cannedFills(fields) {
         fills.push(CANNED.switchOnLabels.test(labels) ? set(f.id, 'true') : skip(f.id));
         break;
       case 'text':
+        // A named combobox value wins even when the field arrives as plain text:
+        // whether an editable combobox is reported as `combobox` or `text` is the
+        // widget's business, and the spec should be asserting how the FIELD ends
+        // up, not which kind the schema happened to carry.
+        if (CANNED.comboboxByLabel[f.name]) {
+          fills.push(set(f.id, CANNED.comboboxByLabel[f.name]));
+          break;
+        }
         fills.push(
           f.autocomplete === 'name' || /name/i.test(labels) ? set(f.id, CANNED.fullName) : skip(f.id),
         );

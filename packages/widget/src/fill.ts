@@ -95,14 +95,20 @@ export async function applyFillPlan(
 
 type Outcome = { ok: true } | { ok: false; reason: string; aborted?: boolean };
 
-// Native controls are checked FIRST: an `<input type="checkbox" role="switch">`
-// is a real checkable and must keep the native click path, role attribute or not.
+// A resolved driver wins outright, because `driverFor` has already declined every
+// native control it must not touch — an `<input type="checkbox" role="switch">` is
+// a real checkable and keeps the native click path, role attribute or not. The one
+// native element a driver DOES claim is a filtered combobox's text input
+// (drivers.ts, RESEARCH §9.1): that input is the widget's filter box, not the
+// field, so typing the plan into it and reading it back would confirm a value the
+// widget's own model never committed.
 async function applyOne(
   element: Element,
   fill: Fill,
   driver: FillDriver | null,
   opts: ApplyOptions,
 ): Promise<Outcome> {
+  if (driver) return applyDriven(element, fill, driver, opts);
   if (element instanceof HTMLInputElement && isCheckable(element)) {
     return applyCheckable(element, fill.value);
   }
@@ -112,7 +118,6 @@ async function applyOne(
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
     return applyTextLike(element, fill.value);
   }
-  if (driver) return applyDriven(element, fill, driver, opts);
   return { ok: false, reason: 'unsupported' };
 }
 

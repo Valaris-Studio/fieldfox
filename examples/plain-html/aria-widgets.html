@@ -117,6 +117,43 @@
         Select a plan
       </button>
 
+      <!--
+        Editable/filtered combobox (MUI Autocomplete / downshift shape): a text
+        input whose listbox narrows as the value changes. The driver must TYPE
+        rather than just click — and must never press Enter, which would submit.
+      -->
+      <label class="field-label" for="owner">Service owner</label>
+      <input
+        class="combobox"
+        id="owner"
+        name="owner"
+        type="text"
+        role="combobox"
+        autocomplete="off"
+        aria-controls="owner-listbox"
+        aria-expanded="false"
+        aria-autocomplete="list"
+        placeholder="Start typing a name"
+      />
+
+      <!--
+        Virtualized listbox: only a window of options is ever in the DOM, so the
+        driver has to scroll to find one further down the list.
+      -->
+      <label class="field-label" for="datacenter">Datacenter</label>
+      <input
+        class="combobox"
+        id="datacenter"
+        name="datacenter"
+        type="text"
+        role="combobox"
+        autocomplete="off"
+        aria-controls="datacenter-listbox"
+        aria-expanded="false"
+        aria-autocomplete="list"
+        placeholder="Start typing a datacenter"
+      />
+
       <span class="field-label" id="backups-label">Nightly backups</span>
       <div class="switch" id="backups" role="switch" aria-checked="false" aria-labelledby="backups-label" tabindex="0">
         <span>Enable nightly backups</span>
@@ -209,6 +246,108 @@
             if (option) commit(option);
           });
 
+          document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !listbox.hidden) close();
+          });
+        }
+
+        // Editable comboboxes: the listbox filters on input and, for the
+        // virtualized one, only ever holds a window of the matching options.
+        const FILTERED = {
+          owner: {
+            debounceMs: 120,
+            items: ['Ana Torres', 'Bruno Silva', 'Camila Rojas', 'Diego Fuentes', 'Elena Vargas'],
+          },
+          datacenter: {
+            debounceMs: 0,
+            // 60 entries with a 8-row window: the match for "Quito" is far
+            // enough down that it only exists in the DOM after scrolling.
+            items: Array.from({ length: 60 }, (_, i) =>
+              ['Santiago', 'Lima', 'Bogota', 'Quito', 'Caracas', 'Montevideo'][i % 6] + ` ${i + 1}`,
+            ),
+            window: 8,
+          },
+        };
+
+        for (const [inputId, config] of Object.entries(FILTERED)) {
+          const input = document.getElementById(inputId);
+          const listbox = document.createElement('ul');
+          listbox.id = `${inputId}-listbox`;
+          listbox.className = 'listbox';
+          listbox.setAttribute('role', 'listbox');
+          listbox.hidden = true;
+          if (config.window) {
+            listbox.style.maxHeight = '10rem';
+            listbox.style.overflowY = 'auto';
+          }
+          portal.append(listbox);
+
+          let debounce;
+          const close = () => {
+            // Cancelling the pending filter is what a real widget does on close:
+            // without it, a keystroke's debounce fires after the commit and
+            // re-opens the popup over an already-chosen value.
+            clearTimeout(debounce);
+            listbox.hidden = true;
+            input.setAttribute('aria-expanded', 'false');
+          };
+
+          // The virtualized list renders only the rows around the scroll offset,
+          // padding above and below so the scrollbar still spans the full set.
+          const render = () => {
+            const query = input.value.trim().toLowerCase();
+            const matches = config.items.filter((name) => name.toLowerCase().includes(query));
+            const rowHeight = 28;
+
+            let visible = matches;
+            let padTop = 0;
+            if (config.window) {
+              const first = Math.floor(listbox.scrollTop / rowHeight);
+              visible = matches.slice(first, first + config.window);
+              padTop = first * rowHeight;
+              listbox.style.paddingTop = `${padTop}px`;
+              listbox.style.paddingBottom = `${Math.max(0, (matches.length - first - config.window) * rowHeight)}px`;
+            }
+
+            listbox.replaceChildren(
+              ...visible.map((name) => {
+                const li = document.createElement('li');
+                li.setAttribute('role', 'option');
+                li.setAttribute('aria-selected', String(name === input.dataset.value));
+                li.style.height = `${rowHeight}px`;
+                li.textContent = name;
+                li.addEventListener('click', () => {
+                  for (const sibling of listbox.children) {
+                    sibling.setAttribute('aria-selected', String(sibling === li));
+                  }
+                  input.value = name;
+                  input.dataset.value = name;
+                  close();
+                  input.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+                return li;
+              }),
+            );
+          };
+
+          const open = () => {
+            const rect = input.getBoundingClientRect();
+            listbox.style.top = `${rect.bottom + window.scrollY + 2}px`;
+            listbox.style.left = `${rect.left + window.scrollX}px`;
+            listbox.hidden = false;
+            input.setAttribute('aria-expanded', 'true');
+            render();
+          };
+
+          input.addEventListener('input', () => {
+            clearTimeout(debounce);
+            debounce = setTimeout(() => {
+              if (listbox.hidden) open();
+              else render();
+            }, config.debounceMs);
+          });
+          input.addEventListener('focus', open);
+          listbox.addEventListener('scroll', render);
           document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape' && !listbox.hidden) close();
           });

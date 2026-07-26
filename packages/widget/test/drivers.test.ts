@@ -104,6 +104,179 @@ function committedText(): string {
   return document.getElementById('value')?.textContent ?? '';
 }
 
+interface FilteredComboOptions {
+  options: string[];
+  current?: string;
+  // Ticks of delay between the input event and the re-rendered option list, the
+  // way MUI/downshift debounce (or await) their filter. The driver must poll
+  // through this rather than read the pre-filter DOM once.
+  filterDelayTicks?: number;
+  // Wraps the widget in a <form> so a test can prove the typing path never
+  // submits it (RESEARCH §9.13: drivers never auto-submit).
+  inForm?: boolean;
+  // MUI's older shape: role=combobox sits on the WRAPPER and the text input is a
+  // descendant, so the driver has to find the input rather than assume it is the
+  // annotated element.
+  roleOnWrapper?: boolean;
+  // Most options a filtered widget will render at once, the way a remote-search
+  // Autocomplete caps its result page. It is what makes typing LOAD-BEARING here:
+  // an option past the cap is unreachable until the query narrows the list to it.
+  renderCap?: number;
+}
+
+// Editable/filtered combobox (MUI Autocomplete, downshift, React Aria): a text
+// input the user TYPES into, whose listbox re-renders to the options matching
+// what was typed. Matching here is the LIBRARY's own prefix filter — deliberately
+// looser than the driver's exact-name match, so a filter narrowing to one option
+// still can't make the driver commit a near-miss.
+function mountFilteredCombobox(opts: FilteredComboOptions): {
+  input: HTMLInputElement;
+  listbox: HTMLElement;
+} {
+  const {
+    options,
+    current = '',
+    filterDelayTicks = 0,
+    inForm = false,
+    roleOnWrapper = false,
+    renderCap = Infinity,
+  } = opts;
+  const inputAttrs = roleOnWrapper ? '' : 'role="combobox" aria-controls="lb" aria-expanded="false"';
+  const wrapperAttrs = roleOnWrapper
+    ? 'role="combobox" aria-controls="lb" aria-expanded="false"'
+    : '';
+  const widget = `
+    <div id="wrap" ${wrapperAttrs}>
+      <input id="cb" type="text" ${inputAttrs} aria-autocomplete="list" value="${current}" />
+    </div>
+    <ul id="lb" role="listbox" hidden></ul>`;
+  document.body.innerHTML = inForm ? `<form id="f">${widget}</form>` : widget;
+
+  const input = document.getElementById('cb') as HTMLInputElement;
+  const listbox = document.getElementById('lb') as HTMLElement;
+  const host = document.getElementById(roleOnWrapper ? 'wrap' : 'cb') as HTMLElement;
+
+  const close = (): void => {
+    host.setAttribute('aria-expanded', 'false');
+    listbox.hidden = true;
+    listbox.replaceChildren();
+  };
+
+  const render = (): void => {
+    const query = input.value.trim().toLowerCase();
+    const visible = options
+      .filter((name) => name.toLowerCase().startsWith(query))
+      .slice(0, renderCap);
+    host.setAttribute('aria-expanded', 'true');
+    listbox.hidden = false;
+    listbox.replaceChildren(
+      ...visible.map((name) => {
+        const li = document.createElement('li');
+        li.setAttribute('role', 'option');
+        li.setAttribute('aria-selected', 'false');
+        li.textContent = name;
+        li.addEventListener('click', () => {
+          li.setAttribute('aria-selected', 'true');
+          input.value = name;
+          close();
+        });
+        return li;
+      }),
+    );
+  };
+
+  const renderAfterDelay = (): void => {
+    let remaining = filterDelayTicks;
+    const tick = (): void => {
+      if (remaining-- <= 0) render();
+      else requestAnimationFrame(tick);
+    };
+    tick();
+  };
+
+  input.addEventListener('input', renderAfterDelay);
+  input.addEventListener('focus', renderAfterDelay);
+  host.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Escape') close();
+  });
+  document.addEventListener('click', (e) => {
+    if (!host.contains(e.target as Node) && !listbox.contains(e.target as Node)) close();
+  });
+
+  return { input, listbox };
+}
+
+interface VirtualOptions {
+  options: string[];
+  // How many options the widget keeps mounted at once — the rest exist only in
+  // the library's data model until the listbox is scrolled to them.
+  windowSize?: number;
+  // A list that never advances however far it is scrolled: the option the plan
+  // named is unreachable, which must end as a plain leave rather than a hang.
+  frozen?: boolean;
+}
+
+// Virtualized listbox (React Aria / TanStack Virtual): only a window of options
+// is in the DOM, and the window advances when the listbox is scrolled.
+function mountVirtualCombobox(opts: VirtualOptions): {
+  trigger: HTMLElement;
+  listbox: HTMLElement;
+} {
+  const { options, windowSize = 3, frozen = false } = opts;
+  document.body.innerHTML = `
+    <div id="trigger" role="combobox" aria-controls="lb" aria-expanded="false"><span id="value"></span></div>
+    <ul id="lb" role="listbox" hidden></ul>`;
+  const trigger = document.getElementById('trigger') as HTMLElement;
+  const listbox = document.getElementById('lb') as HTMLElement;
+  const valueSpan = document.getElementById('value') as HTMLElement;
+  let start = 0;
+
+  const render = (): void => {
+    listbox.replaceChildren(
+      ...options.slice(start, start + windowSize).map((name) => {
+        const li = document.createElement('li');
+        li.setAttribute('role', 'option');
+        li.setAttribute('aria-selected', 'false');
+        li.textContent = name;
+        li.addEventListener('click', () => {
+          li.setAttribute('aria-selected', 'true');
+          valueSpan.textContent = name;
+          trigger.setAttribute('aria-expanded', 'false');
+          listbox.hidden = true;
+          listbox.replaceChildren();
+        });
+        return li;
+      }),
+    );
+  };
+
+  // jsdom has no layout, so scrollTop never actually moves and no scroll event
+  // fires on its own: the fixture advances its window on the scroll event the
+  // driver dispatches, which is the only observable the driver controls.
+  listbox.addEventListener('scroll', () => {
+    if (frozen) return;
+    if (start + windowSize >= options.length) return;
+    start += windowSize;
+    render();
+  });
+
+  trigger.addEventListener('click', () => {
+    if (trigger.getAttribute('aria-expanded') === 'true') return;
+    trigger.setAttribute('aria-expanded', 'true');
+    listbox.hidden = false;
+    start = 0;
+    render();
+  });
+  trigger.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Escape') {
+      trigger.setAttribute('aria-expanded', 'false');
+      listbox.hidden = true;
+    }
+  });
+
+  return { trigger, listbox };
+}
+
 interface EditorOptions {
   text?: string;
   // Which editor library the fixture impersonates. Only 'prosemirror' is driven;
@@ -546,6 +719,431 @@ test('a combobox the host marked aria-readonly is never driven', async () => {
 
   expect(committedText()).toBe('Low');
   expect(report.left[0]).toMatchObject({ fieldId: 'ff-0', reason: 'non-fillable' });
+});
+
+// --- filtered / editable combobox (v1.1b, RESEARCH §9.1) --------------------
+
+test('driverKindFor claims an editable combobox input but not a plain text input', () => {
+  document.body.innerHTML = `
+    <input id="filtered" type="text" role="combobox" aria-controls="lb" aria-expanded="false" />
+    <input id="stray-role" type="text" role="combobox" />
+    <div id="wrapper" role="combobox" aria-controls="lb2"><input id="inner" type="text" /></div>
+    <input id="plain" type="text" />
+    <ul id="lb" role="listbox"></ul>
+    <ul id="lb2" role="listbox"></ul>`;
+
+  const kind = (id: string): string | null => driverKindFor(document.getElementById(id)!);
+  expect(kind('filtered')).toBe('combobox');
+  expect(kind('wrapper')).toBe('combobox');
+  // A role= with no popup wiring is a mislabelled text box, not a combobox: the
+  // native path keeps it, exactly as it did before this slice.
+  expect(kind('stray-role')).toBeNull();
+  expect(kind('plain')).toBeNull();
+});
+
+// The cap makes 'Austria' unreachable until the typed query narrows the list to
+// it, so this only passes if the driver really typed before it looked.
+test('filtered combobox fills by typing the value then clicking the match', async () => {
+  const { input, listbox } = mountFilteredCombobox({
+    options: ['Argentina', 'Australia', 'Austria'],
+    renderCap: 1,
+  });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'Austria' }),
+    resolveById({ 'ff-0': '#cb' }),
+  );
+
+  expect(input.value).toBe('Austria');
+  expect(listbox.hidden).toBe(true);
+  expect(report.filled).toContain('ff-0');
+});
+
+test('filtered combobox waits out the filter debounce before matching', async () => {
+  const { input } = mountFilteredCombobox({
+    options: ['Argentina', 'Australia', 'Austria'],
+    filterDelayTicks: 4,
+    renderCap: 1,
+  });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'Australia' }),
+    resolveById({ 'ff-0': '#cb' }),
+  );
+
+  expect(input.value).toBe('Australia');
+  expect(report.filled).toContain('ff-0');
+});
+
+test('filtered combobox drives the input inside a role=combobox wrapper', async () => {
+  const { input } = mountFilteredCombobox({
+    options: ['Argentina', 'Austria'],
+    roleOnWrapper: true,
+    renderCap: 1,
+  });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'Austria' }),
+    resolveById({ 'ff-0': '#wrap' }),
+  );
+
+  expect(input.value).toBe('Austria');
+  expect(report.filled).toContain('ff-0');
+});
+
+// The load-bearing one for this slice. Typing is a text write like any other, so
+// without the option-click gate it would look like a successful native fill —
+// leaving free text in a widget whose model never committed anything.
+test('a typed value matching no option LEAVES the field and restores what was there', async () => {
+  const { input, listbox } = mountFilteredCombobox({
+    options: ['Argentina', 'Australia'],
+    current: 'Argentina',
+  });
+
+  // A budget long enough for the empty result list to SETTLE, so this asserts the
+  // "no results" ending rather than the clock expiring first.
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'Atlantis' }),
+    resolveById({ 'ff-0': '#cb' }),
+    { timeoutMs: 400 },
+  );
+
+  expect(input.value).toBe('Argentina'); // the typed filter text is undone
+  expect(listbox.hidden).toBe(true);
+  expect(report.filled).toHaveLength(0);
+  expect(report.left[0]).toMatchObject({ fieldId: 'ff-0', reason: 'no-matching-option' });
+});
+
+// The filter narrows to exactly ONE option and it is still not the planned value.
+// Uniqueness is not intent (same rule as the select-only path): commit nothing.
+test('a filter narrowing to one inexact option still leaves the field', async () => {
+  const { input } = mountFilteredCombobox({
+    options: ['Gold Plus', 'Silver'],
+    current: 'Silver',
+  });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'Gold' }),
+    resolveById({ 'ff-0': '#cb' }),
+    { timeoutMs: 60 },
+  );
+
+  expect(input.value).toBe('Silver');
+  expect(report.filled).toHaveLength(0);
+  expect(report.left[0]).toMatchObject({ fieldId: 'ff-0', reason: 'no-matching-option' });
+});
+
+// Never-auto-submit is locked (PLAN §0). Many filtered comboboxes commit on
+// Enter — and Enter in a form input also SUBMITS — so the driver must reach the
+// option by clicking it, never by a key that a form could interpret.
+test('the typing path fires no submit and dispatches no Enter key', async () => {
+  const { input } = mountFilteredCombobox({
+    options: ['Argentina', 'Austria'],
+    inForm: true,
+    renderCap: 1,
+  });
+  const submit = vi.fn((e: Event) => e.preventDefault());
+  const enterKeys: string[] = [];
+  document.getElementById('f')!.addEventListener('submit', submit);
+  for (const type of ['keydown', 'keypress', 'keyup']) {
+    document.addEventListener(type, (e) => {
+      if ((e as KeyboardEvent).key === 'Enter') enterKeys.push(type);
+    });
+  }
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'Austria' }),
+    resolveById({ 'ff-0': '#cb' }),
+  );
+
+  expect(submit).not.toHaveBeenCalled();
+  expect(enterKeys).toEqual([]);
+  expect(input.value).toBe('Austria');
+  expect(report.filled).toContain('ff-0');
+});
+
+// A framework-controlled input only registers a write that came through the
+// native prototype setter plus an `input` event (fill.ts's whole first
+// invariant); a raw `.value =` is deduped away and the list never filters.
+test('typing goes through the native setter so a controlled input filters', async () => {
+  const { input } = mountFilteredCombobox({ options: ['Argentina', 'Austria'] });
+  const seen: string[] = [];
+  input.addEventListener('input', () => seen.push(input.value));
+
+  await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'Austria' }),
+    resolveById({ 'ff-0': '#cb' }),
+  );
+
+  expect(seen).toContain('Austria');
+});
+
+test('abort mid-type reverts the input and stops the loop', async () => {
+  const controller = new AbortController();
+  const { input } = mountFilteredCombobox({
+    options: ['Argentina', 'Austria'],
+    current: 'Argentina',
+  });
+  document.body.insertAdjacentHTML('beforeend', `<input id="after" value="untouched" />`);
+  // Superseded the moment the filter text lands, before any option is clicked.
+  input.addEventListener('input', () => controller.abort());
+
+  const report = await applyFillPlan(
+    plan(
+      { fieldId: 'ff-0', action: 'set', value: 'Austria' },
+      { fieldId: 'ff-1', action: 'set', value: 'written' },
+    ),
+    resolveById({ 'ff-0': '#cb', 'ff-1': '#after' }),
+    { signal: controller.signal, timeoutMs: 60 },
+  );
+
+  expect(input.value).toBe('Argentina');
+  expect((document.getElementById('after') as HTMLInputElement).value).toBe('untouched');
+  expect(report.filled).toHaveLength(0);
+  expect(report.left[0]).toMatchObject({ fieldId: 'ff-0', reason: 'aborted' });
+});
+
+// --- virtualized listbox (RESEARCH §9.12) -----------------------------------
+
+test('a virtualized option found only after scrolling fills the field', async () => {
+  const { listbox } = mountVirtualCombobox({
+    options: ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf'],
+    windowSize: 3,
+  });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'Golf' }),
+    resolveById({ 'ff-0': '#trigger' }),
+  );
+
+  expect(committedText()).toBe('Golf');
+  expect(listbox.hidden).toBe(true);
+  expect(report.filled).toContain('ff-0');
+});
+
+// Scrolling is bounded by the SAME per-field deadline as everything else — a
+// list that never reveals the option ends as a leave, not an endless scroll.
+test('a virtualized option that never materializes leaves the field', async () => {
+  const { trigger } = mountVirtualCombobox({
+    options: ['Alpha', 'Bravo', 'Charlie', 'Delta'],
+    windowSize: 2,
+    frozen: true,
+  });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'Delta' }),
+    resolveById({ 'ff-0': '#trigger' }),
+    { timeoutMs: 60 },
+  );
+
+  expect(committedText()).toBe('');
+  expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  expect(report.filled).toHaveLength(0);
+  expect(report.left[0]).toMatchObject({ fieldId: 'ff-0', reason: 'no-matching-option' });
+});
+
+// The other ending: a list still handing out new windows when the clock expires
+// is a SLOW widget, and says so — a longer budget would have found the option.
+test('a list still yielding new windows at the deadline reports driver-timeout', async () => {
+  const many = Array.from({ length: 500 }, (_, i) => `Option ${i}`);
+  mountVirtualCombobox({ options: many, windowSize: 1 });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'Option 499' }),
+    resolveById({ 'ff-0': '#trigger' }),
+    { timeoutMs: 40 },
+  );
+
+  expect(committedText()).toBe('');
+  expect(report.filled).toHaveLength(0);
+  expect(report.left[0]).toMatchObject({ fieldId: 'ff-0', reason: 'driver-timeout' });
+});
+
+// --- portal / listbox resolution robustness ---------------------------------
+
+// aria-controls pointing at an id that no longer exists (a listbox that unmounts
+// and remounts under a new id, which Radix does across open/close cycles).
+test('a stale aria-controls id falls through to the portal scan', async () => {
+  document.body.innerHTML = `
+    <div id="trigger" role="combobox" aria-controls="gone" aria-expanded="false"><span id="value">Low</span></div>`;
+  const trigger = document.getElementById('trigger') as HTMLElement;
+  const valueSpan = document.getElementById('value') as HTMLElement;
+
+  trigger.addEventListener('click', () => {
+    if (document.getElementById('portal')) return;
+    trigger.setAttribute('aria-expanded', 'true');
+    const portal = document.createElement('ul');
+    portal.id = 'portal';
+    portal.setAttribute('role', 'listbox');
+    for (const name of ['Low', 'High']) {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.textContent = name;
+      li.addEventListener('click', () => {
+        li.setAttribute('aria-selected', 'true');
+        valueSpan.textContent = name;
+        trigger.setAttribute('aria-expanded', 'false');
+        portal.remove();
+      });
+      portal.appendChild(li);
+    }
+    document.body.appendChild(portal);
+  });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'High' }),
+    resolveById({ 'ff-0': '#trigger' }),
+  );
+
+  expect(committedText()).toBe('High');
+  expect(report.filled).toContain('ff-0');
+});
+
+// The portal container mounts one tick, its options the next — the poll must
+// survive an empty listbox rather than adopting it and finding nothing.
+test('a listbox whose options arrive a tick after the container is still driven', async () => {
+  document.body.innerHTML = `
+    <div id="trigger" role="combobox" aria-controls="lb" aria-expanded="false"><span id="value">Low</span></div>`;
+  const trigger = document.getElementById('trigger') as HTMLElement;
+  const valueSpan = document.getElementById('value') as HTMLElement;
+
+  trigger.addEventListener('click', () => {
+    if (document.getElementById('lb')) return;
+    trigger.setAttribute('aria-expanded', 'true');
+    const listbox = document.createElement('ul');
+    listbox.id = 'lb';
+    listbox.setAttribute('role', 'listbox');
+    document.body.appendChild(listbox);
+    requestAnimationFrame(() => {
+      for (const name of ['Low', 'High']) {
+        const li = document.createElement('li');
+        li.setAttribute('role', 'option');
+        li.textContent = name;
+        li.addEventListener('click', () => {
+          li.setAttribute('aria-selected', 'true');
+          valueSpan.textContent = name;
+          trigger.setAttribute('aria-expanded', 'false');
+          listbox.remove();
+        });
+        listbox.appendChild(li);
+      }
+    });
+  });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'High' }),
+    resolveById({ 'ff-0': '#trigger' }),
+  );
+
+  expect(committedText()).toBe('High');
+  expect(report.filled).toContain('ff-0');
+});
+
+// The empty-list grace must not be so tight that a slow portal is misread as
+// "no results": an empty listbox that takes several frames to populate is still
+// a mounting popup, and the option in it must be found.
+test('a listbox that takes several frames to populate is still driven', async () => {
+  document.body.innerHTML = `
+    <div id="trigger" role="combobox" aria-controls="lb" aria-expanded="false"><span id="value">Low</span></div>
+    <ul id="lb" role="listbox"></ul>`;
+  const trigger = document.getElementById('trigger') as HTMLElement;
+  const listbox = document.getElementById('lb') as HTMLElement;
+  const valueSpan = document.getElementById('value') as HTMLElement;
+
+  trigger.addEventListener('click', () => {
+    if (listbox.childElementCount > 0) return;
+    trigger.setAttribute('aria-expanded', 'true');
+    let frames = 6;
+    const tick = (): void => {
+      if (frames-- > 0) {
+        requestAnimationFrame(tick);
+        return;
+      }
+      for (const name of ['Low', 'High']) {
+        const li = document.createElement('li');
+        li.setAttribute('role', 'option');
+        li.textContent = name;
+        li.addEventListener('click', () => {
+          li.setAttribute('aria-selected', 'true');
+          valueSpan.textContent = name;
+          trigger.setAttribute('aria-expanded', 'false');
+          listbox.replaceChildren();
+        });
+        listbox.appendChild(li);
+      }
+    };
+    tick();
+  });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'High' }),
+    resolveById({ 'ff-0': '#trigger' }),
+  );
+
+  expect(committedText()).toBe('High');
+  expect(report.filled).toContain('ff-0');
+});
+
+// A listbox that was in the DOM before our click belongs to somebody else's
+// widget and must never be adopted, however convenient its options look.
+test('a pre-existing unrelated listbox is never adopted', async () => {
+  document.body.innerHTML = `
+    <ul id="theirs" role="listbox"><li role="option">High</li></ul>
+    <div id="trigger" role="combobox" aria-expanded="false"><span id="value">Low</span></div>`;
+  const theirs = document.getElementById('theirs') as HTMLElement;
+  const clicked = vi.fn();
+  theirs.querySelector('[role="option"]')!.addEventListener('click', clicked);
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'High' }),
+    resolveById({ 'ff-0': '#trigger' }),
+    { timeoutMs: 40 },
+  );
+
+  expect(clicked).not.toHaveBeenCalled();
+  expect(committedText()).toBe('Low');
+  expect(report.left[0]).toMatchObject({ fieldId: 'ff-0', reason: 'driver-timeout' });
+});
+
+// A listbox portalled into an open shadow root: aria-controls cannot cross the
+// boundary, and a document-level querySelectorAll does not see inside it either.
+test('a listbox portalled into a shadow root is found', async () => {
+  document.body.innerHTML = `
+    <div id="trigger" role="combobox" aria-controls="lb" aria-expanded="false"><span id="value">Low</span></div>
+    <div id="portal-host"></div>`;
+  const trigger = document.getElementById('trigger') as HTMLElement;
+  const valueSpan = document.getElementById('value') as HTMLElement;
+  const shadow = (document.getElementById('portal-host') as HTMLElement).attachShadow({
+    mode: 'open',
+  });
+
+  trigger.addEventListener('click', () => {
+    if (shadow.childElementCount > 0) return;
+    trigger.setAttribute('aria-expanded', 'true');
+    const listbox = document.createElement('ul');
+    listbox.setAttribute('role', 'listbox');
+    for (const name of ['Low', 'High']) {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.textContent = name;
+      li.addEventListener('click', () => {
+        li.setAttribute('aria-selected', 'true');
+        valueSpan.textContent = name;
+        trigger.setAttribute('aria-expanded', 'false');
+        shadow.replaceChildren();
+      });
+      listbox.appendChild(li);
+    }
+    shadow.appendChild(listbox);
+  });
+
+  const report = await applyFillPlan(
+    plan({ fieldId: 'ff-0', action: 'set', value: 'High' }),
+    resolveById({ 'ff-0': '#trigger' }),
+  );
+
+  expect(committedText()).toBe('High');
+  expect(report.filled).toContain('ff-0');
 });
 
 // --- contenteditable driver (RESEARCH §9.3) ---------------------------------

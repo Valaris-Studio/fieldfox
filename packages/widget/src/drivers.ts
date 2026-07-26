@@ -1,6 +1,6 @@
 import type { Fill } from '@fieldfox/shared';
 
-// Cards v1.1a / v1.1c — fill drivers for the widgets the native executor can't
+// Cards v1.1a / v1.1b / v1.1c — fill drivers for the widgets the native executor can't
 // touch (RESEARCH §9). A driver drives the VISIBLE UI exactly like a user would —
 // open, find the option by accessible name, activate, read the committed value
 // back — because a custom widget's real state lives in a framework model no
@@ -31,6 +31,24 @@ const PLAIN_CLICK_GRACE_MS = 60;
 // A revert is a cleanup, not part of the fill's budget — it needs its own small
 // window even when the fill already exhausted the deadline.
 const REVERT_TIMEOUT_MS = 200;
+
+// One "page" of a virtualized listbox. jsdom reports clientHeight 0 and a real
+// popup is rarely shorter than this, so it is the floor for a scroll step —
+// overshooting is harmless (the virtualizer clamps), undershooting stalls the
+// window advance (§9.12).
+const VIRTUAL_SCROLL_STEP_PX = 200;
+
+// Poll rounds showing the SAME option window before the list counts as fully
+// read. Two, because a virtualizer legitimately re-renders its current window
+// once (a measurement pass) before advancing to the next one.
+const VIRTUAL_SCROLL_STALL_ROUNDS = 2;
+
+// Poll rounds an EMPTY listbox gets before it is read as "no results" rather than
+// "not mounted yet" — the two are indistinguishable at any single tick. Generous
+// (a portal can take several frames to render its items) but still well short of
+// the per-field deadline, so a genuinely empty result reports the honest miss
+// instead of spending the whole budget on a timeout.
+const EMPTY_LIST_SETTLE_ROUNDS = 12;
 
 // Consecutive unchanged rAF ticks that count a rich-text editor's DOM as settled
 // (§9.3). Two, because a single tick can fall between an editor's beforeinput
@@ -80,8 +98,14 @@ export class DriverError extends Error {
 
 // --- registry ---------------------------------------------------------------
 
+// The filtered driver is consulted FIRST and is the one driver allowed to claim a
+// native <input>: an editable combobox IS a text input (§9.1), and without this
+// branch it would fall to the native text path, which types the model's string
+// into the filter box and reports success while the widget's model committed
+// nothing. Everywhere else a stray role= on a real input still stays native.
 export function driverFor(el: Element): FillDriver | null {
-  if (isNativeControl(el)) return null; // a stray role= on a real <input> stays native
+  if (filteredComboboxDriver.detect(el)) return filteredComboboxDriver;
+  if (isNativeControl(el)) return null;
   if (switchDriver.detect(el)) return switchDriver;
   if (comboboxDriver.detect(el)) return comboboxDriver;
   if (contentEditableDriver.detect(el)) return contentEditableDriver;
@@ -89,6 +113,7 @@ export function driverFor(el: Element): FillDriver | null {
 }
 
 export function driverKindFor(el: Element): DriverKind | null {
+  if (filteredComboboxDriver.detect(el)) return 'combobox';
   if (isNativeControl(el)) return null;
   if (switchDriver.detect(el)) return 'switch';
   if (comboboxDriver.detect(el)) return 'combobox';
@@ -165,13 +190,7 @@ const comboboxDriver: FillDriver = {
     committedName.delete(el); // a retry must never read the previous fill's note
 
     const listbox = await openAndResolveListbox(el, ctx);
-    const options = await pollFor(() => {
-      const found = optionsIn(listbox);
-      return found.length > 0 ? found : null;
-    }, ctx);
-
-    const match = matchByAccessibleName(options, wanted);
-    if (!match) throw new DriverError('no-matching-option');
+    const match = await findOption(listbox, wanted, ctx);
 
     // Committed = the option reports aria-selected OR the trigger's own text
     // changed. Headless UI fires only onClick and never mirrors state into a
@@ -208,6 +227,185 @@ const comboboxDriver: FillDriver = {
   },
 };
 
+// --- filtered / editable combobox (v1.1b, §9.1) -----------------------------
+
+// MUI Autocomplete, downshift, React Aria ComboBox: a text input whose listbox
+// renders only the options matching what has been TYPED, so the select-only
+// "click to open, the options are already there" path finds nothing to match.
+// The driver types the planned value to narrow the list, then reaches the option
+// exactly as the select-only path does — by clicking it.
+//
+// It NEVER dispatches Enter. Most of these widgets commit on Enter, which makes
+// it the tempting shortcut, but Enter in a form input also submits the form, and
+// never-auto-submit is locked (PLAN §0, §9.13). A click commits without that
+// ambiguity, so a click is the only activation this driver has.
+const filteredComboboxDriver: FillDriver = {
+  detect(el) {
+    return editableComboboxInput(el) !== null;
+  },
+
+  capture(el) {
+    return { committedText: editableComboboxInput(el)?.value ?? '' };
+  },
+
+  async fill(el, value, ctx) {
+    // detect() already proved the input is there; re-resolving keeps fill() total
+    // for a widget that re-rendered its input away in between.
+    const input = editableComboboxInput(el);
+    if (!input) throw new DriverError('driver-timeout');
+    const wanted = toScalar(value);
+    committedName.delete(el);
+
+    typeInto(input, wanted);
+    // The filter is asynchronous almost everywhere — a debounce, a React render,
+    // or a remote query — so the listbox that exists right now may still be the
+    // PRE-filter one. Both the resolve and the option search poll within the
+    // field's single deadline rather than reading the DOM once.
+    const listbox = await openAndResolveListbox(el, ctx, input);
+    const match = await findOption(listbox, wanted, ctx);
+
+    // The commit witness canNOT be the input's value here: we just typed the
+    // planned string into it, so it already reads like a success before the click
+    // lands. Only the option's own aria-selected, or the popup closing (which
+    // these widgets do on commit), proves the widget accepted the choice.
+    await activate(
+      match,
+      () => match.getAttribute('aria-selected') === 'true' || !isOpen(el, listbox),
+      ctx,
+    );
+    committedName.set(el, accessibleName(match));
+    await closePopup(el, listbox);
+  },
+
+  // The input's own value is the committed one: these widgets write the chosen
+  // option's label back into the input on commit, and a widget that did not is
+  // one whose commit we cannot confirm — which the gate turns into a leave.
+  readback(el) {
+    return editableComboboxInput(el)?.value ?? null;
+  },
+
+  // Unlike the select-only path, this driver TYPED into the field, so closing is
+  // not enough — the filter text has to come back out or the user is left with a
+  // half-typed query where their value used to be.
+  async revert(el, original) {
+    const input = editableComboboxInput(el);
+    if (input && input.value !== (original.committedText ?? '')) {
+      typeInto(input, original.committedText ?? '');
+    }
+    await closePopup(el, resolveListbox(el));
+  },
+};
+
+// The text input an editable combobox is driven through: the annotated element
+// itself, or — the older MUI/Ark shape — the input inside a wrapper that carries
+// the role. Requires POPUP WIRING (aria-controls/-owns/-expanded/-haspopup/
+// -autocomplete): a bare `role="combobox"` on a text input is a mislabelled text
+// box, and claiming it would divert an ordinary field away from the native path.
+function editableComboboxInput(el: Element): HTMLInputElement | null {
+  if (el.getAttribute('role') !== 'combobox' || !hasPopupWiring(el)) return null;
+  if (el instanceof HTMLInputElement) return isTextInput(el) ? el : null;
+  const inner = el.querySelector('input');
+  return inner && isTextInput(inner) ? inner : null;
+}
+
+function hasPopupWiring(el: Element): boolean {
+  return ['aria-controls', 'aria-owns', 'aria-expanded', 'aria-haspopup', 'aria-autocomplete'].some(
+    (attr) => el.hasAttribute(attr),
+  );
+}
+
+function isTextInput(input: HTMLInputElement): boolean {
+  return input.type === 'text' || input.type === 'search' || input.type === '';
+}
+
+// The native-setter + input-event technique the native path uses (fill.ts): a
+// raw `.value =` is swallowed by React's per-instance value tracker, so the
+// widget's filter would never run. focus() first because several of these
+// libraries only mount their listbox for a focused input.
+function typeInto(input: HTMLInputElement, text: string): void {
+  input.focus();
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  if (setter) setter.call(input, text);
+  else input.value = text;
+  input.dispatchEvent(
+    new InputEvent('input', {
+      bubbles: true,
+      composed: true,
+      inputType: 'insertText',
+      data: text,
+    }),
+  );
+}
+
+// --- option search, including virtualized lists (§9.12) ---------------------
+
+// A long list may render only its visible window, so the planned option can be
+// absent from the DOM at this instant and present two scrolls later. Poll: match
+// what is mounted, and when nothing matches, scroll the listbox to ask for the
+// next window. The DEADLINE is the bound — this never scrolls forever.
+//
+// The two endings stay DISTINCT, because they mean different things to whoever
+// reads the report: the list ran out of new windows without a match
+// ('no-matching-option' — everything reachable was read and the value was not
+// among it) versus the clock ran out while it was still yielding them
+// ('driver-timeout' — a slow widget, which a longer budget would fix).
+async function findOption(
+  listbox: Element,
+  wanted: string,
+  ctx: DriverContext,
+): Promise<Element> {
+  // Windows are identified by the names they hold, not by their size: a
+  // virtualizer's successive windows are usually the SAME length, so a count
+  // would read every scroll as "nothing new".
+  const seenWindows = new Set<string>();
+  let unchangedRounds = 0;
+  let emptyRounds = 0;
+
+  return pollFor(() => {
+    const options = optionsIn(listbox);
+    const match = matchByAccessibleName(options, wanted);
+    if (match) return match;
+
+    // An empty list is AMBIGUOUS: a portal that has not populated yet, or a
+    // filtered combobox answering "no results" — and the two look identical at
+    // any single tick. It gets a much longer grace than a populated window's
+    // stall check (a portal can take several frames to render its items), after
+    // which a still-empty list is taken as the answer rather than spending the
+    // rest of the budget to report a timeout instead of a plain miss.
+    if (options.length === 0) {
+      if (++emptyRounds >= EMPTY_LIST_SETTLE_ROUNDS) {
+        throw new DriverError('no-matching-option');
+      }
+      return null;
+    }
+    emptyRounds = 0;
+
+    const fingerprint = options.map(accessibleName).join(' ');
+    if (seenWindows.has(fingerprint)) unchangedRounds++;
+    else {
+      seenWindows.add(fingerprint);
+      unchangedRounds = 0;
+    }
+    // Two rounds of grace before the list counts as exhausted, because a
+    // virtualizer legitimately re-renders its current window once (a measurement
+    // pass) before advancing to the next one.
+    if (unchangedRounds >= VIRTUAL_SCROLL_STALL_ROUNDS) {
+      throw new DriverError('no-matching-option');
+    }
+    scrollForMore(listbox);
+    return null;
+  }, ctx);
+}
+
+// Ask the listbox for its next window. Real virtualizers react to the `scroll`
+// event, which the scrollTop write fires only asynchronously in a browser and not
+// at all in jsdom (no layout, so scrollTop never moves) — hence the explicit
+// dispatch, which is the only part of this a driver can rely on everywhere.
+function scrollForMore(listbox: Element): void {
+  listbox.scrollTop += Math.max(listbox.clientHeight, VIRTUAL_SCROLL_STEP_PX);
+  listbox.dispatchEvent(new Event('scroll'));
+}
+
 // The committed value a select-only combobox shows on its trigger. Prefer the
 // live selection (aria-activedescendant → the option's name) because a trigger
 // that renders a placeholder alongside the value would otherwise read both.
@@ -222,25 +420,79 @@ function triggerText(el: Element): string {
   return accessibleName(el);
 }
 
-async function openAndResolveListbox(el: Element, ctx: DriverContext): Promise<Element> {
-  const preexisting = new Set(document.querySelectorAll('[role="listbox"]'));
+// `opener` is the element whose focus/typing may already have mounted the popup
+// (the filtered combobox's input); when it is absent, or the widget is still
+// closed after it, the trigger gets clicked the way the select-only path does.
+async function openAndResolveListbox(
+  el: Element,
+  ctx: DriverContext,
+  opener?: HTMLElement,
+): Promise<Element> {
+  const preexisting = new Set(allListboxes());
+  let clicked = false;
 
-  if (el.getAttribute('aria-expanded') !== 'true') escalatedClick(el);
+  const openIfClosed = (): void => {
+    if (clicked || el.getAttribute('aria-expanded') === 'true') return;
+    clicked = true;
+    escalatedClick(opener ?? el);
+  };
+  // A filtered combobox usually opens on focus/input, so it gets one poll round
+  // to do that before a click is escalated at it — clicking a widget that is
+  // already opening would toggle it straight back shut.
+  if (!opener) openIfClosed();
 
   return pollFor(() => {
     const byReference = resolveListbox(el);
-    if (byReference && isRendered(byReference) && optionsIn(byReference).length > 0) {
-      return byReference;
-    }
-    // Radix/shadcn portal their listbox to document.body with no id link back to
-    // the trigger, so aria-controls/aria-owns resolve to nothing (§9.1). Fall
-    // back to a listbox that appeared AFTER our click — a pre-existing one is
-    // somebody else's widget and must never be driven.
-    for (const candidate of document.querySelectorAll('[role="listbox"]')) {
-      if (!preexisting.has(candidate) && isRendered(candidate)) return candidate;
-    }
+    // Options are allowed to arrive a tick after the container: an EMPTY
+    // referenced listbox is still ours, and findOption polls for its contents.
+    if (byReference && isRendered(byReference)) return byReference;
+    // Radix/shadcn portal their listbox with no id link back to the trigger, and
+    // an aria-controls id can also be stale (Radix remounts under a new id across
+    // open/close cycles) — either way the reference resolves to nothing (§9.1).
+    // Fall back to a listbox that appeared AFTER we started, wherever it mounted;
+    // a pre-existing one is somebody else's widget and must never be driven.
+    const appeared = newListbox(preexisting);
+    if (appeared) return appeared;
+    openIfClosed();
     return null;
   }, ctx);
+}
+
+// The first listbox not in `known`, checked document-level FIRST because that is
+// the cheap query and where all but a handful of portals land. Only when it comes
+// up empty do we pay for the shadow walk — this runs on every poll tick, and
+// crawling every element of a large document at rAF cadence would be its own
+// performance bug.
+function newListbox(known: Set<Element>): Element | null {
+  for (const candidate of document.querySelectorAll('[role="listbox"]')) {
+    if (!known.has(candidate) && isRendered(candidate)) return candidate;
+  }
+  for (const candidate of shadowListboxes()) {
+    if (!known.has(candidate) && isRendered(candidate)) return candidate;
+  }
+  return null;
+}
+
+// Listboxes inside OPEN shadow roots: a popup portalled into a shadow tree is
+// invisible to a document-level query, and the host's aria-controls cannot
+// reference across the boundary either (§9.1). Closed roots stay unreachable by
+// construction (§9.13).
+function shadowListboxes(): Element[] {
+  const found: Element[] = [];
+  const visit = (root: DocumentFragment | Document): void => {
+    for (const el of root.querySelectorAll('*')) {
+      if (!el.shadowRoot) continue;
+      found.push(...Array.from(el.shadowRoot.querySelectorAll('[role="listbox"]')));
+      visit(el.shadowRoot);
+    }
+  };
+  visit(document);
+  return found;
+}
+
+// Everything `newListbox` would consider, for the pre-open snapshot.
+function allListboxes(): Element[] {
+  return [...Array.from(document.querySelectorAll('[role="listbox"]')), ...shadowListboxes()];
 }
 
 function resolveListbox(el: Element): Element | null {

@@ -89,6 +89,37 @@ test('plain-html ARIA widgets: comboboxes and switches fill; an unmatchable valu
   await expect(page.locator('#project-name')).not.toHaveValue('');
 });
 
+// Card 4978eee9 (v1.1b). An editable combobox is a text input whose listbox
+// filters as it is typed into, so the driver has to type — and must never press
+// Enter, which on a real page would submit the form.
+test('plain-html: an editable combobox fills by typing, and a virtualized one by scrolling', async ({
+  page,
+}) => {
+  await page.goto(ARIA_URL);
+
+  // Submit spy: never-auto-submit is a locked invariant and the typing path is
+  // the most plausible way to break it.
+  await page.evaluate(() => {
+    (window as { __ffSubmits?: number } & Window).__ffSubmits = 0;
+    document.addEventListener('submit', (e) => {
+      e.preventDefault();
+      (window as { __ffSubmits?: number } & Window).__ffSubmits!++;
+    });
+  });
+
+  await openPanelAndFill(page, 'Camila Rojas owns it, running out of the Quito 10 datacenter.');
+  await expect(ui(page).status).toContainText('Review, then submit', { timeout: 15_000 });
+
+  await expect(page.locator('#owner')).toHaveValue(CANNED.comboboxByLabel.owner);
+  // Only ever in the DOM after the driver scrolled the virtualized window to it.
+  await expect(page.locator('#datacenter')).toHaveValue(CANNED.comboboxByLabel.datacenter);
+
+  expect(await page.evaluate(() => (window as { __ffSubmits?: number } & Window).__ffSubmits)).toBe(
+    0,
+  );
+  await expect(page.locator('[role="listbox"]:not([hidden])')).toHaveCount(0);
+});
+
 test('react-host Radix: portalled Select and Switch fill through the real design system', async ({
   page,
 }) => {

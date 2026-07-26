@@ -214,10 +214,11 @@ Native controls — `<input>`, `<textarea>`, `<select>`, checkboxes and radios �
 | Widget | Requirement |
 |---|---|
 | Select / dropdown | `role="combobox"` or `role="listbox"`, with `role="option"` children when open |
+| Type-to-filter combobox | a text input with `role="combobox"` referencing its listbox (`aria-controls` / `aria-owns` / `aria-autocomplete`) |
 | Toggle / switch | `role="switch"` or `role="checkbox"` with `aria-checked` |
 | Rich-text editor | ProseMirror-based only (tiptap included) |
 
-Fieldfox opens the widget, matches the planned value against the options' **accessible names**, activates the match, and reads the committed value back. Options are matched at fill time, never harvested by opening your dropdowns during introspection.
+Fieldfox opens the widget, matches the planned value against the options' **accessible names**, activates the match, and reads the committed value back. Options are matched at fill time, never harvested by opening your dropdowns during introspection. For a filtering combobox it types into the input to narrow the list, then clicks the match — it never presses Enter, so a filter box inside a form can't trigger a submit. Virtualized lists are scrolled to find an option that isn't rendered yet.
 
 Matching tolerates case, accents and whitespace differences — not partial ones. A planned "Gold" will not select "Gold Plus"; when nothing matches exactly the field is left untouched, same as any other value fieldfox can't confirm.
 
