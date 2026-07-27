@@ -41,6 +41,18 @@ export interface RateBudgetStore {
   // Current budget state without charging — used to reject before doing any work
   // once the switch is tripped.
   budgetState(siteKey: string, dailyBudget: number): Promise<BudgetState>;
+
+  // Counts one fill against a free-lane identity's DAILY allowance and reports
+  // the post-increment state (CLOUD-2). Distinct from hitRateWindow: that is a
+  // sliding burst limiter, this is a cumulative day-long count, so a slow drip
+  // still exhausts it. `key` is caller-namespaced like the rate scopes.
+  hitDailyAllowance(key: string, allowance: number): Promise<AllowanceState>;
+}
+
+export interface AllowanceState {
+  used: number; // fills counted today, including this one
+  allowance: number;
+  exhausted: boolean; // used > allowance — this request is over the line
 }
 
 interface Window {
@@ -58,9 +70,15 @@ function dayEpoch(nowMs: number): number {
   return Math.floor(nowMs / 86_400_000);
 }
 
+interface DailyCount {
+  used: number;
+  dayEpoch: number;
+}
+
 export class InMemoryStore implements RateBudgetStore {
   private readonly windows = new Map<string, Window>();
   private readonly budgets = new Map<string, DailyBudget>();
+  private readonly allowances = new Map<string, DailyCount>();
 
   // Injectable clock keeps the window/rollover logic deterministic under test.
   constructor(private readonly now: () => number = Date.now) {}
@@ -103,5 +121,16 @@ export class InMemoryStore implements RateBudgetStore {
   async budgetState(siteKey: string, dailyBudget: number): Promise<BudgetState> {
     const b = this.rolledBudget(siteKey);
     return { used: b.used, budget: dailyBudget, killed: b.killed };
+  }
+
+  async hitDailyAllowance(key: string, allowance: number): Promise<AllowanceState> {
+    const today = dayEpoch(this.now());
+    let c = this.allowances.get(key);
+    if (!c || c.dayEpoch !== today) {
+      c = { used: 0, dayEpoch: today };
+      this.allowances.set(key, c);
+    }
+    c.used += 1;
+    return { used: c.used, allowance, exhausted: c.used > allowance };
   }
 }

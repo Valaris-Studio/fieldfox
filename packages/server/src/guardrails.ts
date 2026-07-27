@@ -155,6 +155,9 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
     // state rather than a generic failure (the CLOUD-3 exhaustion surface).
     let exhausted: { error: string; message: string };
     let freeModel: string | undefined;
+    // Set only on the free lane, and only when an allowance is configured: the
+    // per-origin daily fill count this request must be charged against (CLOUD-2).
+    let allowanceCheck: { key: string; allowance: number } | undefined;
 
     if (!presentedKey && config.freeTier) {
       const freeTier = config.freeTier;
@@ -184,6 +187,9 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
       rateWindowMs = freeTier.rateWindowMs;
       exhausted = { error: 'free_tier_exhausted', message: 'the free allowance is exhausted' };
       freeModel = freeTier.model;
+      if (freeTier.dailyFillAllowance != null) {
+        allowanceCheck = { key: `free-allowance:${origin}`, allowance: freeTier.dailyFillAllowance };
+      }
     } else {
       // Site-key auth (401). Unknown or missing key → refuse.
       if (!presentedKey || !presentedKey.startsWith(SITE_KEY_PREFIX) || !(presentedKey in config.siteKeys)) {
@@ -238,7 +244,29 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
       return refuse(c, 429, exhausted);
     }
 
-    // 6. Image caps (413 too many / too large, 415 unsupported type).
+    // 6. Free allowance (402). The anonymous visitor's per-origin daily fill
+    // count (CLOUD-2). Checked BEFORE the image caps and the token charge so an
+    // exhausted visitor costs us nothing at all.
+    //
+    // 402 Payment Required, not 429: running out of the free allowance is a
+    // designed product surface with an answer ("create an account"), not a
+    // "retry later". Deliberately carries NO retry-after — waiting does not help.
+    if (allowanceCheck) {
+      const state = await store.hitDailyAllowance(allowanceCheck.key, allowanceCheck.allowance);
+      if (state.exhausted) {
+        log({ event: 'refused', status: 402, siteKey, reason: 'free_allowance_exhausted' });
+        return refuse(c, 402, {
+          error: 'free_allowance_exhausted',
+          allowance: state.allowance,
+          message: `this site has used its ${state.allowance} free fills for today`,
+          // Only present when configured — a deployment without a signup flow
+          // must not send the widget to a dead link.
+          ...(config.freeTier?.signupUrl ? { signupUrl: config.freeTier.signupUrl } : {}),
+        });
+      }
+    }
+
+    // 7. Image caps (413 too many / too large, 415 unsupported type).
     const images = Array.isArray(body.images) ? body.images : [];
     if (images.length > config.maxImages) {
       log({ event: 'refused', status: 413, siteKey, imageCount: images.length, reason: 'too_many_images' });
@@ -278,7 +306,7 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
       }
     }
 
-    // 7. Charge the pre-call estimate against the daily budget. If THIS request
+    // 8. Charge the pre-call estimate against the daily budget. If THIS request
     // crosses the ceiling the switch trips (and is honored on the NEXT request);
     // we still serve this one, then reconcile with real usage post-call.
     const contextChars = typeof body.contextText === 'string' ? body.contextText.length : 0;

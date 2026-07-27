@@ -57,6 +57,14 @@ const FreeTierPolicy = z.object({
   // Ceiling across the WHOLE free lane, not per origin. This is the number that
   // actually bounds our daily cost (see docs/CLOUD.md).
   dailyTokenBudget: z.number().int().positive(),
+  // The anonymous allowance a single origin may spend per day, counted in FILLS
+  // (CLOUD-2). Distinct from rateLimit, which is a burst window a slow drip
+  // never trips. Omitted → the lane is bounded only by the ceilings above and no
+  // visitor is ever told to sign up.
+  dailyFillAllowance: z.number().int().positive().optional(),
+  // Where an exhausted visitor is sent to keep going. Carried in the exhaustion
+  // response so the widget can render a real call to action (CLOUD-3).
+  signupUrl: z.string().url().optional(),
 });
 export type FreeTierPolicy = z.infer<typeof FreeTierPolicy>;
 

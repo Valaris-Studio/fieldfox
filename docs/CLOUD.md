@@ -33,15 +33,29 @@ A wrong key is an error the integrator must see. It must never quietly demote to
 
 ## The limits
 
-Three independent controls, all behind the existing pluggable counter store:
+Four independent controls, all behind the existing pluggable counter store:
 
 1. **Per-origin rate limit** — bounds one site's burst.
 2. **Per-IP rate limit** — bounds one client, which is what catches an abuser rotating spoofed origins.
-3. **Global daily token ceiling** — one counter for the entire free lane. This is the control that actually bounds our spend, because it is the only one an abuser cannot escape by rotating *both* origin and IP.
+3. **Per-origin daily allowance** — a cumulative count of *fills*, not a window. This is the allowance a visitor actually spends, and it closes the gap a rate limiter leaves open: a slow drip never trips a burst window, but it does exhaust a daily count.
+4. **Global daily token ceiling** — one counter for the entire free lane. This is the control that bounds our total spend, because it is the only one an abuser cannot escape by rotating *both* origin and IP.
 
-When the global ceiling trips, the lane refuses with `429 free_tier_exhausted` — a distinct code from ordinary rate limiting and from the paid lane's `daily_budget_exceeded`, so the widget can render a real "free allowance used up" state rather than a generic failure.
+Controls 3 and 4 compose deliberately. The allowance is per-origin, so rotating origins escapes it *by design* — the global ceiling is what catches that. Conversely a single origin hammering one identity is capped by the allowance long before the global ceiling notices. Neither alone is sufficient; together there is no gap.
 
-Free-lane counters are namespaced apart from the paid lane's (`free-origin:` / `free-ip:`, and a reserved global budget key that cannot wear the `ffx_pk_` site-key prefix). Free traffic can never consume a paying customer's window or budget.
+Free-lane counters are namespaced apart from the paid lane's (`free-origin:` / `free-ip:` / `free-allowance:`, and a reserved global budget key that cannot wear the `ffx_pk_` site-key prefix). Free traffic can never consume a paying customer's window or budget.
+
+### Refusals, and why the codes differ
+
+| Condition | Response | Meaning |
+|---|---|---|
+| Burst limit hit | `429 rate_limited` (+ `retry-after`) | Slow down; retrying later works. |
+| Per-origin allowance spent | `402 free_allowance_exhausted` | **Product surface.** Carries `allowance` and, when configured, `signupUrl`. |
+| Global lane ceiling tripped | `429 free_tier_exhausted` | Our lane-wide kill switch, not the visitor's fault. |
+| Paid key over its budget | `429 daily_budget_exceeded` | Self-hosted/paid path; carries no hosted signup surface. |
+
+`402 Payment Required` is deliberate for allowance exhaustion: it has an *answer* ("create an account"), unlike a 429 which means "wait". It carries **no `retry-after`**, because waiting is not the remedy. This is the signal the widget renders in CLOUD-3.
+
+The allowance is checked **before** image validation and before the token charge, so an exhausted visitor triggers no provider call and costs nothing.
 
 ## Configuration
 
@@ -54,7 +68,18 @@ Setting `FIELDFOX_FREE_MODEL` enables the lane; the other three are then require
 | `FIELDFOX_FREE_RATE_WINDOW_MS` | Rate-limit window length |
 | `FIELDFOX_FREE_DAILY_TOKEN_BUDGET` | Global daily ceiling for the whole lane |
 
+Two further free-lane settings are **optional** and currently programmatic only (`GuardrailConfig.freeTier`, no env key yet):
+
+| Field | Meaning |
+|---|---|
+| `dailyFillAllowance` | Fills one origin may spend per day. Omitted → no allowance is enforced and no visitor is ever told to sign up; the lane is bounded only by the ceilings above. |
+| `signupUrl` | Where an exhausted visitor is sent. Omitted → the refusal carries no link, so a deployment without a signup flow never points at a dead one. |
+
 A hosted deployment may run with **no site keys at all** — that is the expected state before the first paying customer.
+
+## Persistence
+
+All four counters live behind the `RateBudgetStore` interface. The in-memory default is correct for a single instance only: counters are per-process, so across several instances the allowance is under-counted and a tripped kill switch on one instance does not stop the others. **Multi-instance deploys must supply a shared adapter** (Redis/KV) implementing the same interface — at which point the allowance survives a process restart, since the state was never in the process to begin with.
 
 ## The number: what an abuser can cost us per day
 
