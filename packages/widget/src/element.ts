@@ -442,7 +442,13 @@ export class FieldFoxElement extends HTMLElement {
     } catch (error) {
       if (controller.signal.aborted) return; // a newer request/teardown owns cleanup
       this.settleFill();
-      panel.showError(errorMessageFor(error));
+      // The free allowance running out is the one refusal that is not a fault:
+      // nothing broke, the visitor reached the end of the free tier and there is
+      // a next step. It gets the offer surface instead of the error one. A
+      // self-hosted server never sends this code, so that path is untouched.
+      const offer = allowanceOfferFor(error);
+      if (offer) panel.showOffer(offer.message, OFFER_LINK_TEXT, offer.signupUrl);
+      else panel.showError(errorMessageFor(error));
     }
   }
 
@@ -476,6 +482,37 @@ export class FieldFoxElement extends HTMLElement {
   // The live popover handle so C4 can drive the panel through the fill lifecycle.
   get panel(): PopoverHandle | null {
     return this.popoverPanel;
+  }
+}
+
+// Call-to-action label on the exhaustion surface. Separate from the sentence so
+// the link text stays short and the copy around it can change independently.
+const OFFER_LINK_TEXT = 'Create an account';
+
+// The hosted free allowance is spent (server: 402 free_allowance_exhausted).
+// Returns the copy + a validated link, or null when this error is anything else.
+// Stating that the form was left untouched is the point: the user must know
+// their data is intact, not half-written.
+function allowanceOfferFor(error: unknown): { message: string; signupUrl?: string } | null {
+  if (!(error instanceof FillRequestError) || error.errorCode !== 'free_allowance_exhausted') {
+    return null;
+  }
+  return {
+    message: 'That used up the free fills for this site today — your form is unchanged.',
+    signupUrl: safeHttpUrl(error.details?.signupUrl),
+  };
+}
+
+// Only http(s) may reach an href. `signupUrl` is network input, so rendering it
+// unvalidated would let a hostile or compromised endpoint run `javascript:` on
+// the HOST page. Anything else degrades to copy with no link.
+function safeHttpUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  try {
+    const url = new URL(value, document.baseURI);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : undefined;
+  } catch {
+    return undefined;
   }
 }
 

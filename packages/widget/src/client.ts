@@ -21,15 +21,20 @@ export interface RequestFillOptions {
 export class FillRequestError extends Error {
   readonly status?: number;
   readonly errorCode?: string;
+  // The refusal body's remaining fields, verbatim and untrusted. Some refusals
+  // carry data the panel renders (the free tier's `signupUrl` / `allowance`);
+  // callers must validate before use — this is network input, not a contract.
+  readonly details?: Record<string, unknown>;
   constructor(
     message: string,
     status?: number,
-    options?: { cause?: unknown; errorCode?: string },
+    options?: { cause?: unknown; errorCode?: string; details?: Record<string, unknown> },
   ) {
     super(message, options);
     this.name = 'FillRequestError';
     this.status = status;
     this.errorCode = options?.errorCode;
+    this.details = options?.details;
   }
 }
 
@@ -59,11 +64,11 @@ export async function requestFill(
     // fill_failed) all carry a machine-readable `error` code; surface it so the
     // caller can map known codes to specific copy. Body may not be JSON — the
     // status alone still drives the generic error path.
-    throw new FillRequestError(
-      `Fill request failed (${response.status}).`,
-      response.status,
-      { errorCode: await errorCodeOf(response) },
-    );
+    const refusal = await refusalBodyOf(response);
+    throw new FillRequestError(`Fill request failed (${response.status}).`, response.status, {
+      errorCode: typeof refusal?.error === 'string' ? refusal.error : undefined,
+      details: refusal,
+    });
   }
 
   let body: unknown;
@@ -81,13 +86,14 @@ export async function requestFill(
   return body;
 }
 
-// Best-effort read of the server's `error` code from a non-200 body. Never
-// throws: a non-JSON error page (proxy 502, HTML) just yields undefined and the
-// caller falls back to the status-driven generic message.
-async function errorCodeOf(response: Response): Promise<string | undefined> {
+// Best-effort read of a non-200 JSON refusal body. Never throws: a non-JSON
+// error page (proxy 502, HTML) just yields undefined and the caller falls back
+// to the status-driven generic message. The body is read ONCE here — the stream
+// cannot be consumed twice.
+async function refusalBodyOf(response: Response): Promise<Record<string, unknown> | undefined> {
   try {
-    const body = (await response.json()) as { error?: unknown };
-    return typeof body.error === 'string' ? body.error : undefined;
+    const body = (await response.json()) as unknown;
+    return typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : undefined;
   } catch {
     return undefined;
   }

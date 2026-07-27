@@ -71,6 +71,11 @@ export interface PopoverHandle {
   // The error settle: reveals the panel (hidden for the flight) EXPANDED and
   // focuses it so the user can read the message and retry.
   showError(message: string): void;
+  // The free allowance ran out (CLOUD-3). Like showError in behaviour (reveal,
+  // expand, focus) but NOT in styling: this is a next step, not a fault. The
+  // optional link is the call to action; `linkUrl` must already be validated
+  // http(s) — it arrives from the network.
+  showOffer(message: string, linkText: string, linkUrl?: string): void;
   // Non-error informational status — the C4 fill report ("Filled 3, left 1").
   // The success settle: reveals the panel (hidden for the flight) directly as the
   // minimized status strip so the just-filled fields are visible for review
@@ -194,6 +199,11 @@ const PANEL_STYLES = `
 .ff-panel.ff-minimized .ff-chips { display: none; }
 .ff-status { margin-top: 6px; min-height: 1em; font-size: 13px; }
 .ff-status.ff-error { color: #b3261e; }
+/* The free allowance ran out. Deliberately NOT the error red: this is a next
+   step, not a fault, so it reads as an ordinary informational note with the
+   accent reserved for the call to action. */
+.ff-status.ff-offer { color: #1a1a1a; }
+.ff-offer-link { color: var(--fieldfox-accent, #e2622c); font-weight: 600; }
 /* Done state: collapse to a title + status strip so the filled fields behind the
    panel are visible for review (pilot-finding 5). Click anywhere on the strip to
    re-expand. The title/status stay; the bulky intake controls hide. */
@@ -855,6 +865,7 @@ export function createPopover(
   function showError(message: string): void {
     status.textContent = message;
     status.classList.add('ff-error');
+    status.classList.remove('ff-offer');
     // The fill settled with an error: reveal the panel (it was hidden for the
     // flight) BEFORE repositioning so its rect is measurable, then un-minimize —
     // errors need the full panel to retry. Focus the panel so the error is
@@ -863,9 +874,36 @@ export function createPopover(
     setMinimized(false);
     panel.focus();
   }
-  function showStatus(message: string): void {
+  // The free allowance ran out (CLOUD-3). Deliberately NOT an error state: no
+  // ff-error styling, because the product did not break — the visitor reached
+  // the end of the free tier and there is a next step. Behaves like showError
+  // otherwise (reveal + expand + focus), since the message needs to be read and
+  // the link needs to be reachable by keyboard.
+  //
+  // `linkUrl` is caller-validated (http/https only); `message` is inserted as
+  // TEXT, never markup — both arrive from the network.
+  function showOffer(message: string, linkText: string, linkUrl?: string): void {
     status.textContent = message;
     status.classList.remove('ff-error');
+    status.classList.add('ff-offer');
+    if (linkUrl) {
+      status.append(' ');
+      const link = document.createElement('a');
+      link.href = linkUrl;
+      link.textContent = linkText;
+      link.target = '_blank';
+      // noopener: never hand the host page's window to a cross-origin tab.
+      link.rel = 'noopener noreferrer';
+      link.className = 'ff-offer-link';
+      status.append(link);
+    }
+    setHidden(false);
+    setMinimized(false);
+    panel.focus();
+  }
+  function showStatus(message: string): void {
+    status.textContent = message;
+    status.classList.remove('ff-error', 'ff-offer');
     // A success report is the done state: reveal the panel (hidden for the flight)
     // directly into the minimized status strip so the just-filled fields behind it
     // are reviewable (pilot-finding 5). Revealed before collapse so the strip's
@@ -878,14 +916,14 @@ export function createPopover(
   // message, not an error state).
   function showInfo(message: string): void {
     status.textContent = message;
-    status.classList.remove('ff-error');
+    status.classList.remove('ff-error', 'ff-offer');
   }
   function statusMessage(): string {
     return status.textContent ?? '';
   }
   function clearStatus(): void {
     status.textContent = '';
-    status.classList.remove('ff-error');
+    status.classList.remove('ff-error', 'ff-offer');
   }
 
   // Hide/reveal the whole panel for the in-flight window (item 3). Hidden ≠
@@ -919,6 +957,7 @@ export function createPopover(
     setBusy,
     isBusy: () => busy,
     showError,
+    showOffer,
     showStatus,
     expand,
     isMinimized: () => minimized,
