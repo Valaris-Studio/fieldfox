@@ -7,3 +7,8 @@ button { margin-top: 1rem; padding: 0.5rem; font: inherit; }
 .error { color: #b00020; margin: 0; font-size: 0.875rem; }
 .muted { color: #666; font-size: 0.875rem; }
 pre { background: #f5f5f5; padding: 1rem; overflow-x: auto; }
+/* The coverage fixture's deliberately-unsupported custom control: styled as a
+   real UI so it is a fair test, but carrying no ARIA role a driver can claim. */
+.pill-group { display: flex; gap: 0.4rem; }
+.pill { padding: 0.25rem 0.75rem; border: 1px solid #ccc; border-radius: 999px; cursor: pointer; }
+.pill-on { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }

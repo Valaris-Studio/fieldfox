@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { RadixForm } from './RadixForm';
 import { EditorForm } from './EditorForm';
+import { CoverageForm } from './CoverageForm';
 import './styles.css';
 
 // Each driver fixture gets its OWN route. Two <field-fox> elements on one page
@@ -11,6 +12,7 @@ import './styles.css';
 const ROUTES: Record<string, () => React.JSX.Element> = {
   '/radix': RadixForm,
   '/editor': EditorForm,
+  '/coverage': CoverageForm,
 };
 
 const Page = ROUTES[window.location.pathname] ?? App;

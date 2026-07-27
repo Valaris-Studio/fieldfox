@@ -194,6 +194,46 @@ describe('fillable flag', () => {
     expect(schema.fields.find((f) => f.name === 'ok')!.fillable).toBe(true);
   });
 
+  test('aria-hidden controls are non-fillable — design systems mirror state into them', () => {
+    // Found by the coverage harness (card b260cfd6): Radix Select renders a
+    // hidden native <select> beside its ARIA trigger to carry form state. It is
+    // aria-hidden + tabindex=-1 + 1x1px, but display:block / visibility:visible,
+    // so the CSS-only visibility check passed it. The result was ONE logical
+    // field introspected TWICE and filled twice independently — the mirror's
+    // write winning and contradicting the trigger's.
+    //
+    // aria-hidden means "not in the accessibility tree", i.e. a field the user
+    // can neither perceive nor reach. Since the widget fills THROUGH the
+    // accessibility contract, such a control is never a legitimate target.
+    const host = mount(`
+      <form>
+        <select name="mirror" aria-hidden="true" tabindex="-1">
+          <option value="">none</option>
+          <option value="gold">Gold</option>
+        </select>
+        <input name="real" />
+      </form>
+    `);
+    const { schema } = introspectForms([host.querySelector('form')!]);
+
+    expect(schema.fields.find((f) => f.name === 'mirror')!.fillable).toBe(false);
+    expect(schema.fields.find((f) => f.name === 'real')!.fillable).toBe(true);
+  });
+
+  test('a control inside an aria-hidden subtree is non-fillable too', () => {
+    // The mirror is often wrapped rather than marked itself.
+    const host = mount(`
+      <form>
+        <div aria-hidden="true"><input name="wrapped" /></div>
+        <input name="real" />
+      </form>
+    `);
+    const { schema } = introspectForms([host.querySelector('form')!]);
+
+    expect(schema.fields.find((f) => f.name === 'wrapped')!.fillable).toBe(false);
+    expect(schema.fields.find((f) => f.name === 'real')!.fillable).toBe(true);
+  });
+
   test('display:none fields are included but flagged non-fillable', () => {
     const host = mount(`
       <form>

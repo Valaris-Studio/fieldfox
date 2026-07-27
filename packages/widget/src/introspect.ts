@@ -340,8 +340,25 @@ function computeFillable(control: HTMLElement, kind: FieldKind): boolean {
   if (isAriaWidget(control) && !driverFor(control)) return false;
   if ((control as HTMLInputElement).readOnly === true) return false;
   if (control.getAttribute('aria-readonly') === 'true') return false;
+  if (isAriaHidden(control)) return false;
   if (!isVisible(control)) return false;
   return true;
+}
+
+// aria-hidden means "not in the accessibility tree" — a control the user can
+// neither perceive nor reach. Design systems use exactly this to park a hidden
+// NATIVE control beside their ARIA widget so the browser still submits a value
+// (Radix Select does; radix-ui#3521). Such a mirror is 1x1px but
+// display:block/visibility:visible, so the CSS-only visibility check below
+// passes it — and the same logical field then gets introspected twice and
+// filled twice, the mirror's write silently contradicting the widget's
+// (coverage harness, card b260cfd6).
+//
+// The widget fills THROUGH the accessibility contract, so a node hidden from it
+// is never a legitimate target. Checked up the ancestors because the mirror is
+// as often wrapped as marked.
+function isAriaHidden(el: HTMLElement): boolean {
+  return el.closest('[aria-hidden="true"]') !== null;
 }
 
 // Best-effort visibility. jsdom implements no layout: getBoundingClientRect and
