@@ -1,0 +1,50 @@
+<!doctype html>
+<!--
+  The NORTH-STAR SNIPPET (CLOUD-1): a script tag and a <field-fox> element with a
+  target, and nothing else. No endpoint, no site key, no account, no server.
+
+  With no `endpoint` attribute the widget posts to the hosted service, and with
+  no `site-key` it sends no key header — which is exactly how the hosted free
+  lane identifies an anonymous request (it attributes by Origin instead).
+
+  This page is what a brand-new visitor copies. Every other example fixture
+  configures itself for a LOCAL server; this one is deliberately bare.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Andes Cloud — newsletter signup (zero-config embed)</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 32rem; padding: 0 1rem; }
+      form { display: grid; gap: 0.5rem; border: 1px solid #ccc; border-radius: 8px; padding: 1rem; }
+      label { font-weight: 600; margin-top: 0.5rem; }
+      input { font: inherit; padding: 0.4rem; }
+      button { margin-top: 1rem; padding: 0.5rem; font: inherit; }
+      .muted { color: #666; font-size: 0.875rem; margin: 0; }
+    </style>
+  </head>
+  <body>
+    <h1>Andes Cloud — stay in the loop</h1>
+    <p class="muted">
+      The embed below carries no endpoint and no site key. Click the fieldfox
+      button at the form's top-right corner and paste your details.
+    </p>
+
+    <form id="newsletter-form">
+      <label for="full-name">Full name</label>
+      <input id="full-name" name="full-name" type="text" autocomplete="name" />
+
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email" />
+
+      <label for="company">Company</label>
+      <input id="company" name="company" type="text" autocomplete="organization" />
+
+      <button type="submit">Subscribe</button>
+    </form>
+
+    <script src="../../packages/widget/dist/fieldfox.js"></script>
+    <field-fox target="#newsletter-form"></field-fox>
+  </body>
+</html>

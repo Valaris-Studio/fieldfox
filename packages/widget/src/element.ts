@@ -22,8 +22,19 @@ import { createAdjustMode, type AdjustHandle } from './adjust.js';
 
 export const ELEMENT_NAME = 'field-fox';
 
-// The fieldfox server's fill endpoint; overridable via `<field-fox endpoint="…">`.
-const DEFAULT_ENDPOINT = '/api/fill';
+// The hosted service's fill endpoint, used when `<field-fox>` carries no
+// `endpoint` attribute — the zero-config snippet (CLOUD-1). It is ABSOLUTE on
+// purpose: a relative default resolves against the HOST page's origin, so a bare
+// snippet on acme.com would POST to acme.com/api/fill and 404, which is why the
+// attribute used to be effectively required.
+//
+// A compile-time constant, never a runtime lookup: no discovery round-trip
+// before the first fill, and no eager weight beyond the string itself.
+//
+// NOTE: this hostname is baked into every CDN-pinned snippet in the wild, so
+// changing it later strands them. It is deliberately the ONLY place the hosted
+// host appears (CLOUD-5 owns standing the deployment up behind it).
+export const HOSTED_FILL_ENDPOINT = 'https://api.fieldfox.dev/api/fill';
 
 // Wire schemaVersion sent in every FillRequest. Mirrors `SCHEMA_VERSION` in
 // @fieldfox/shared (a drift-guard test pins it there), but declared LOCALLY as a
@@ -314,7 +325,11 @@ export class FieldFoxElement extends HTMLElement {
   // finding #1). Accessor names must stay disjoint from embed attribute names
   // so React falls through to setAttribute.
   private get fillEndpoint(): string {
-    return this.getAttribute('endpoint') || DEFAULT_ENDPOINT;
+    // An explicit value is passed through verbatim, relative ones included: a
+    // self-hoster's `/api/fill` must stay same-origin, never be absolutized
+    // against the hosted host. Empty/whitespace (an unset template variable)
+    // reads as absent rather than POSTing to the current page URL.
+    return this.getAttribute('endpoint')?.trim() || HOSTED_FILL_ENDPOINT;
   }
 
   private get siteKey(): string | undefined {

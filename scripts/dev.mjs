@@ -132,6 +132,13 @@ run('server', ['--filter', '@fieldfox/server', 'dev'], {
         dailyTokenBudget: 1_000_000,
       },
     }),
+  // Free lane on, so the zero-config fixture (no endpoint, no site key) can fill
+  // the way a hosted visitor does. Dev limits are generous — the ceilings are a
+  // production concern; here they only need to not fire during a test run.
+  FIELDFOX_FREE_MODEL: process.env.FIELDFOX_FREE_MODEL ?? process.env.FIELDFOX_LLM_MODEL ?? 'mock-model',
+  FIELDFOX_FREE_RATE_LIMIT: process.env.FIELDFOX_FREE_RATE_LIMIT ?? '1000',
+  FIELDFOX_FREE_RATE_WINDOW_MS: process.env.FIELDFOX_FREE_RATE_WINDOW_MS ?? '60000',
+  FIELDFOX_FREE_DAILY_TOKEN_BUDGET: process.env.FIELDFOX_FREE_DAILY_TOKEN_BUDGET ?? '100000000',
 });
 run('react', ['--filter', '@fieldfox/example-react-host', 'dev']);
 

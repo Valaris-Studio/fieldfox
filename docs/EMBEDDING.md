@@ -60,13 +60,34 @@ If the target resolves to a container with no `<form>` (common on component-fram
 
 The host form is only referenced, never relocated.
 
+## Hosted vs self-hosted
+
+The widget is **identical** in both modes — same bundle, same bytes, no mode flag and no build variant. The only thing that differs is where it sends the fill request, which is decided entirely by the `endpoint` attribute.
+
+**Hosted (omit `endpoint`)** — the zero-config embed. The widget posts to the Fieldfox hosted service, which identifies your site from the request's `Origin` and serves it on a free allowance:
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/@fieldfox/widget@0.1.1/dist/fieldfox.js"></script>
+<field-fox target="#my-form"></field-fox>
+```
+
+No account, no key, no server. Free-lane limits and what happens when the allowance runs out are documented in [docs/CLOUD.md](CLOUD.md).
+
+**Self-hosted (set `endpoint`)** — the widget posts wherever you point it and sends nothing hosted-specific:
+
+```html
+<field-fox target="#my-form" endpoint="/api/fill" site-key="ffx_pk_..."></field-fox>
+```
+
+A relative `endpoint` stays relative to your page's origin; it is never rewritten against the hosted host. Setting `endpoint` opts out of the hosted service completely.
+
 ## Attribute reference
 
 | Attribute | Type | Default | Meaning |
 |---|---|---|---|
 | `target` | CSS selector | _(none)_ | Selector resolved against the document. When absent, the element runs in wrapping mode and discovers descendant forms. |
-| `endpoint` | URL | `/api/fill` | The server's fill endpoint. Point it at your self-hosted server (e.g. `https://fieldfox.example.com/api/fill`). |
-| `site-key` | `ffx_pk_…` token | _(none)_ | Public site key, sent as the `x-fieldfox-key` header. Omit only if your server doesn't require one. |
+| `endpoint` | URL | the hosted service | The server's fill endpoint. **Omit it** to use the hosted service (see [Hosted vs self-hosted](#hosted-vs-self-hosted)); set it to point at your own server (e.g. `https://fieldfox.example.com/api/fill` or a same-origin `/api/fill`). |
+| `site-key` | `ffx_pk_…` token | _(none)_ | Public site key, sent as the `x-fieldfox-key` header. Omit on the hosted free tier and on self-hosted servers that don't require one. |
 | `context` | string | _(none)_ | Whole-form guidance (site-owner trusted). Trimmed; truncated to 2000 chars. Read fresh per request, so changing it needs no remount. |
 | `form-id` | string | _(none)_ | Opaque token the server may map to per-form policies (e.g. a model override). Trimmed; truncated to 128 chars. |
 | `accept-documents` | boolean-ish | off | Present (and not `"false"`) enables PDF + text-file attachments in the panel. Toggling re-creates the panel. |
@@ -232,7 +253,7 @@ Matching tolerates case, accents and whitespace differences — not partial ones
 
 The widget makes no external network calls beyond your fill endpoint, and loads no external fonts or images. For a strict host CSP:
 
-- **`connect-src`** must allow the `endpoint` origin (the `POST /api/fill` target).
+- **`connect-src`** must allow the `endpoint` origin (the `POST /api/fill` target) — `https://api.fieldfox.dev` on the hosted default, or your own server's origin when `endpoint` is set.
 - **`style-src`** — during a fill, the widget injects one small `<style>` tag into `document.head` to dim affected fields (they live in your light DOM, which a shadow stylesheet can't reach). Everything else lives inside the widget's shadow root.
 - **`script-src`** must allow the CDN or self-host origin serving the widget bundle.
 

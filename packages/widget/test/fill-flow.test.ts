@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from 'vitest';
-import { FieldFoxElement, registerFieldFox } from '../src/element.js';
+import { FieldFoxElement, HOSTED_FILL_ENDPOINT, registerFieldFox } from '../src/element.js';
 
 // The element-level seam wired in C4: a `fieldfox:fill` event runs
 // introspect → POST /api/fill (mocked) → applyFillPlan → restore effects + report.
@@ -73,7 +73,9 @@ test('fieldfox:fill runs the round-trip and applies the returned plan', async ()
 
   expect(email.value).toBe('filled@x.co');
   expect(fetchSpy).toHaveBeenCalledOnce();
-  expect(fetchSpy.mock.calls[0][0]).toBe('/api/fill');
+  // With no `endpoint` attribute the widget targets the hosted service (CLOUD-1);
+  // hosted-default behaviour is covered in depth by hosted-default.test.ts.
+  expect(fetchSpy.mock.calls[0][0]).toBe(HOSTED_FILL_ENDPOINT);
 });
 
 test('a custom endpoint attribute overrides the default', async () => {
