@@ -1,6 +1,7 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import {
   ALLOWED_IMAGE_MIME,
+  FREE_TIER_BUDGET_KEY,
   SITE_KEY_PREFIX,
   type AllowedImageMime,
   type GuardrailConfig,
@@ -135,34 +136,91 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
       });
     }
 
-    // 2. Site-key auth (401). Unknown or missing key → refuse.
-    const siteKey = c.req.header(SITE_KEY_HEADER);
-    if (!siteKey || !siteKey.startsWith(SITE_KEY_PREFIX) || !(siteKey in config.siteKeys)) {
-      log({ event: 'refused', status: 401, reason: 'unknown_site_key' });
-      return refuse(c, 401, { error: 'unknown_site_key', message: 'missing or unknown site key' });
-    }
-    const policy = config.siteKeys[siteKey]!;
-
-    // 3. Origin allowlist (403). Exact match only. NOTE: Origin is trivially
-    // spoofable by non-browser clients, so this is defense-in-depth layered on
-    // the site key — never the primary control (RESEARCH §6). Browsers set it
-    // and honor the CORS response; the real gate is the key + budget + rate.
+    // 2. Lane split. A request that presents NO site key falls to the hosted
+    // free lane (CLOUD-0) when it is configured; everything else takes the
+    // site-key path. The split is on key ABSENCE, never on key validity — a
+    // typo'd or revoked key must surface as 401, not quietly demote to the cheap
+    // model on the shared free allowance.
+    const presentedKey = c.req.header(SITE_KEY_HEADER);
     const origin = c.req.header('origin');
-    if (!origin || !policy.origins.includes(origin)) {
-      log({ event: 'refused', status: 403, siteKey, reason: 'origin_not_allowed' });
-      return refuse(c, 403, { error: 'origin_not_allowed', message: 'origin is not on this key’s allowlist' });
+    const ip = ipOf(c);
+
+    let siteKey: string;
+    let policy: SiteKeyPolicy;
+    let rateScopes: ReadonlyArray<readonly [string, string]>;
+    let rateLimit: number;
+    let rateWindowMs: number;
+    // The refusal this lane emits once its ceiling is reached. The free lane's
+    // code is distinct so the widget can render a real "allowance used up"
+    // state rather than a generic failure (the CLOUD-3 exhaustion surface).
+    let exhausted: { error: string; message: string };
+    let freeModel: string | undefined;
+
+    if (!presentedKey && config.freeTier) {
+      const freeTier = config.freeTier;
+      // The free lane has no allowlist — any origin is welcome, that is the
+      // whole point. But it MUST have one: a request we cannot attribute is one
+      // we cannot rate-limit. `null` (sandboxed iframe, file://) is a real
+      // Origin header value and is refused for the same reason as an absent one.
+      if (!origin || origin === 'null') {
+        log({ event: 'refused', status: 403, reason: 'origin_required' });
+        return refuse(c, 403, {
+          error: 'origin_required',
+          message: 'the free tier attributes requests by Origin; this request has none',
+        });
+      }
+      siteKey = FREE_TIER_BUDGET_KEY;
+      // One global ceiling for the whole lane, so total spend is bounded no
+      // matter how many origins appear. Reconciliation reads the budget from
+      // here, exactly as it does for a site key.
+      policy = { origins: [origin], dailyTokenBudget: freeTier.dailyTokenBudget };
+      // Namespaced away from the paid lane's 'key:'/'ip:' scopes so free traffic
+      // can never consume a paying customer's window.
+      rateScopes = [
+        ['origin', `free-origin:${origin}`],
+        ['ip', `free-ip:${ip}`],
+      ];
+      rateLimit = freeTier.rateLimit;
+      rateWindowMs = freeTier.rateWindowMs;
+      exhausted = { error: 'free_tier_exhausted', message: 'the free allowance is exhausted' };
+      freeModel = freeTier.model;
+    } else {
+      // Site-key auth (401). Unknown or missing key → refuse.
+      if (!presentedKey || !presentedKey.startsWith(SITE_KEY_PREFIX) || !(presentedKey in config.siteKeys)) {
+        log({ event: 'refused', status: 401, reason: 'unknown_site_key' });
+        return refuse(c, 401, { error: 'unknown_site_key', message: 'missing or unknown site key' });
+      }
+      siteKey = presentedKey;
+      policy = config.siteKeys[presentedKey]!;
+
+      // 3. Origin allowlist (403). Exact match only. NOTE: Origin is trivially
+      // spoofable by non-browser clients, so this is defense-in-depth layered on
+      // the site key — never the primary control (RESEARCH §6). Browsers set it
+      // and honor the CORS response; the real gate is the key + budget + rate.
+      if (!origin || !policy.origins.includes(origin)) {
+        log({ event: 'refused', status: 403, siteKey, reason: 'origin_not_allowed' });
+        return refuse(c, 403, { error: 'origin_not_allowed', message: 'origin is not on this key’s allowlist' });
+      }
+      rateScopes = [
+        ['key', siteKey],
+        ['ip', ip],
+      ];
+      rateLimit = config.rateLimit;
+      rateWindowMs = config.rateWindowMs;
+      exhausted = {
+        error: 'daily_budget_exceeded',
+        message: 'daily token budget exhausted for this site key',
+      };
     }
-    // Reflect the (validated) origin so the browser accepts the response.
-    c.header('access-control-allow-origin', origin);
+
+    // Reflect the (validated, or free-lane attributed) origin so the browser
+    // accepts the response.
+    c.header('access-control-allow-origin', origin!);
     c.header('vary', 'Origin');
 
-    // 4. Rate limit (429), per key AND per IP within the window.
-    const ip = ipOf(c);
-    for (const [scope, id] of [
-      ['key', siteKey],
-      ['ip', ip],
-    ] as const) {
-      const hit = await store.hitRateWindow(`${scope}:${id}`, config.rateLimit, config.rateWindowMs);
+    // 4. Rate limit (429), on each scope of the resolved lane within the window.
+    for (const [scope, id] of rateScopes) {
+      const hit = await store.hitRateWindow(`${scope}:${id}`, rateLimit, rateWindowMs);
       if (hit.count > hit.limit) {
         const retryAfterSec = Math.max(1, Math.ceil((hit.resetAtMs - Date.now()) / 1000));
         c.header('retry-after', String(retryAfterSec));
@@ -177,10 +235,7 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
     const preState = await store.budgetState(siteKey, policy.dailyTokenBudget);
     if (preState.killed) {
       log({ event: 'refused', status: 429, siteKey, reason: 'budget_exceeded' });
-      return refuse(c, 429, {
-        error: 'daily_budget_exceeded',
-        message: 'daily token budget exhausted for this site key',
-      });
+      return refuse(c, 429, exhausted);
     }
 
     // 6. Image caps (413 too many / too large, 415 unsupported type).
@@ -234,10 +289,12 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
     c.set('fieldfoxPolicy', policy);
     c.set('fieldfoxEstimatedTokens', estimatedTokens);
 
-    // Resolve the per-formId model override, if configured. The formId is an
-    // opaque token, not user content, so it is safe in operational metadata.
+    // Resolve the model for this call. The free lane pins the cheapest model;
+    // an explicit per-formId policy still wins, since that is a deliberate
+    // deployer choice rather than a lane default. The formId is an opaque token,
+    // not user content, so it is safe in operational metadata.
     const formId = typeof body.formId === 'string' ? body.formId : undefined;
-    const modelOverride = formId ? config.formPolicies?.[formId]?.model : undefined;
+    const modelOverride = (formId ? config.formPolicies?.[formId]?.model : undefined) ?? freeModel;
     if (modelOverride) c.set('fieldfoxModelOverride', modelOverride);
 
     const fieldCount = Array.isArray(body.formSchema?.fields) ? body.formSchema!.fields!.length : 0;

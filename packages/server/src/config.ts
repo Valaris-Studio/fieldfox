@@ -36,6 +36,30 @@ const SiteKeyPolicy = z.object({
 });
 export type SiteKeyPolicy = z.infer<typeof SiteKeyPolicy>;
 
+// The free lane (CLOUD-0) attributes requests by Origin, so it has no site key
+// to charge against. Its global ceiling shares the store's budget keyspace with
+// site keys; the leading '@' keeps it outside the ffx_pk_ prefix that every site
+// key must carry, so a customer key can never collide with it.
+export const FREE_TIER_BUDGET_KEY = '@free-tier-global';
+
+// The free lane is the candy (board decision 2026-07-26): cheapest model, heavy
+// by-IP and by-origin limits, and a global daily ceiling that bounds total spend
+// no matter how many origins show up. Origin is spoofable and that is ACCEPTED —
+// the cheap model plus these ceilings is the answer to abuse, not cryptography.
+// Absent from config → the free lane is off, which is the self-hosted default.
+const FreeTierPolicy = z.object({
+  // The cheapest model. Required: a free lane without an explicit cheap model
+  // would silently bill the good model to anonymous traffic.
+  model: z.string().min(1),
+  // Per-window fills allowed for one IP and, separately, for one origin.
+  rateLimit: z.number().int().positive(),
+  rateWindowMs: z.number().int().positive(),
+  // Ceiling across the WHOLE free lane, not per origin. This is the number that
+  // actually bounds our daily cost (see docs/CLOUD.md).
+  dailyTokenBudget: z.number().int().positive(),
+});
+export type FreeTierPolicy = z.infer<typeof FreeTierPolicy>;
+
 const DEFAULT_MAX_IMAGES = 4;
 const DEFAULT_MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB (RESEARCH §6)
 const DEFAULT_MAX_BODY_BYTES = 8 * 1024 * 1024; // headroom over 4×5MB base64 is intentional
@@ -65,6 +89,9 @@ export const GuardrailConfig = z.object({
   // Optional per-formId policy overrides. When a request's formId matches a key,
   // its policy (currently just `model`) applies to that request (PLAN §0 G3).
   formPolicies: z.record(z.string(), FormPolicy).optional(),
+  // Hosted free lane (CLOUD-0). Omitted → keyless requests are refused exactly
+  // as before, which is what a self-hosted deployment wants.
+  freeTier: FreeTierPolicy.optional(),
 });
 export type GuardrailConfig = z.infer<typeof GuardrailConfig>;
 
@@ -101,6 +128,33 @@ function parseSiteKeysEnv(): z.infer<typeof SiteKeysMap> {
   return parsed.data;
 }
 
+// The free lane is enabled by setting its model; the remaining knobs then have
+// to be set too (zod enforces it), so a half-configured free tier fails at boot
+// rather than serving anonymous traffic on an unintended model or budget.
+function parseFreeTierEnv(): FreeTierPolicy | undefined {
+  const model = process.env.FIELDFOX_FREE_MODEL;
+  if (!model) return undefined;
+  const parsed = FreeTierPolicy.safeParse({
+    model,
+    rateLimit: intFromEnv('FIELDFOX_FREE_RATE_LIMIT'),
+    rateWindowMs: intFromEnv('FIELDFOX_FREE_RATE_WINDOW_MS'),
+    dailyTokenBudget: intFromEnv('FIELDFOX_FREE_DAILY_TOKEN_BUDGET'),
+  });
+  if (!parsed.success) {
+    throw new Error(
+      'FIELDFOX_FREE_MODEL enables the free lane, which also requires ' +
+        'FIELDFOX_FREE_RATE_LIMIT, FIELDFOX_FREE_RATE_WINDOW_MS and ' +
+        `FIELDFOX_FREE_DAILY_TOKEN_BUDGET: ${JSON.stringify(parsed.error.issues)}`,
+    );
+  }
+  return parsed.data;
+}
+
+function parseOptionalSiteKeysEnv(): z.infer<typeof SiteKeysMap> {
+  if (!process.env.FIELDFOX_SITE_KEYS && !process.env.FIELDFOX_CONFIG_FILE) return {};
+  return parseSiteKeysEnv();
+}
+
 function intFromEnv(name: string): number | undefined {
   const raw = process.env[name];
   if (raw == null || raw === '') return undefined;
@@ -113,8 +167,13 @@ function intFromEnv(name: string): number | undefined {
 // Undefined optionals let zod apply the defaults above.
 export function loadConfig(): GuardrailConfig {
   const modelAllowlistRaw = process.env.FIELDFOX_MODEL_ALLOWLIST;
+  const freeTier = parseFreeTierEnv();
   return resolveConfig({
-    siteKeys: parseSiteKeysEnv(),
+    // A free-lane-only deployment (the hosted tier before any paying customer)
+    // legitimately has no site keys, so the site-key config is only mandatory
+    // when the free lane is off.
+    siteKeys: freeTier ? parseOptionalSiteKeysEnv() : parseSiteKeysEnv(),
+    freeTier,
     maxImages: intFromEnv('FIELDFOX_MAX_IMAGES'),
     maxImageBytes: intFromEnv('FIELDFOX_MAX_IMAGE_BYTES'),
     maxBodyBytes: intFromEnv('FIELDFOX_MAX_BODY_BYTES'),

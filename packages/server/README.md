@@ -13,7 +13,7 @@ in any Node/edge adapter.
 Guardrail config is loaded once at boot by `loadConfig()`. Provide the site-key
 map plus optional global-limit overrides.
 
-### Site-key map (required — one of the two)
+### Site-key map (required unless the free lane is enabled — one of the two)
 
 Each site key (`ffx_pk_…`) maps to an exact-match origin allowlist and a daily
 token budget.
@@ -39,6 +39,24 @@ token budget.
 | `FIELDFOX_RATE_LIMIT` | `10` | requests per window, per key and per IP |
 | `FIELDFOX_RATE_WINDOW_MS` | `60000` | rate-limit window length |
 | `FIELDFOX_MODEL_ALLOWLIST` | _(unset)_ | comma-separated allowed model ids |
+
+### Hosted free lane (optional — off unless configured)
+
+Keyless requests attributed by `Origin` and served on the cheapest model. Setting
+`FIELDFOX_FREE_MODEL` enables the lane and makes the other three required, so a
+half-configured free tier fails at boot. When enabled, the site-key map becomes
+optional (a hosted deployment may have no paying keys yet). Full rationale and the
+bounded-cost analysis: [docs/CLOUD.md](../../docs/CLOUD.md).
+
+| Env var | Meaning |
+|---|---|
+| `FIELDFOX_FREE_MODEL` | cheapest model id; **enables the free lane** |
+| `FIELDFOX_FREE_RATE_LIMIT` | fills per window, per origin and (separately) per IP |
+| `FIELDFOX_FREE_RATE_WINDOW_MS` | rate-limit window length |
+| `FIELDFOX_FREE_DAILY_TOKEN_BUDGET` | global daily ceiling for the whole lane |
+
+Free-lane refusals: `403 origin_required` (no attributable `Origin`),
+`429 rate_limited`, `429 free_tier_exhausted` (global ceiling reached).
 
 ### Schema-version compatibility
 
