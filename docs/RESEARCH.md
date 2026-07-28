@@ -678,12 +678,12 @@ Extends §2 (fill engine, native setters, readback-or-revert) into the space §2
 explicitly deferred: the non-native widgets that `introspect.ts computeFillable`
 already marks `fillable:false` today — `role=combobox`/`listbox`,
 `role=checkbox`/`switch`, and `contenteditable` (introspect.ts:310-319). The
-pilot quantified the gap (`docs/pilot/REPORT.md` finding 3): on Backplane's
-Create-Card dialog only **3 of 10** fields were fillable — a tiptap description
-editor and six shadcn `role=combobox` Selects (Type/Priority/Status/Column/two
-participant Selects) were correctly left, and the context's *bug / high-priority
-/ to-do* had no fillable home; Vario's `/signup` adds a country Select and a
-radix `role=checkbox` DPA button that can never fill. This is per Locked
+pilot quantified the gap (finding 3): on a representative kanban Create-Card
+dialog only **3 of 10** fields were fillable — a tiptap description editor and
+six shadcn `role=combobox` Selects (Type/Priority/Status/Column/two participant
+Selects) were correctly left, and the context's *bug / high-priority / to-do*
+had no fillable home; a second pilot form's signup flow adds a country Select
+and a radix `role=checkbox` consent button that can never fill. This is per Locked
 Decision (fill-or-leave), not a bug — but it caps coverage on exactly the
 modern design-system forms fieldfox most wants. This section designs a **driver
 layer** that *raises* coverage without *relaxing* any locked invariant:
@@ -975,9 +975,9 @@ custom element), which the walker largely already does (introspect.ts:126-128,
 
 ### 9.10 Phased slices → pilot acceptance mapping
 
-Pilot target: **≥7/10 fillable on Backplane's Create-Card dialog** (today 3/10;
-`docs/pilot/REPORT.md`). That dialog's non-fillable seven are: 1 tiptap
-contenteditable + 6 shadcn `role=combobox` Selects.
+Pilot target: **≥7/10 fillable on the pilot Create-Card dialog** (today 3/10).
+That dialog's non-fillable seven are: 1 tiptap contenteditable + 6 shadcn
+`role=combobox` Selects.
 
 | Slice | Delivers | Backplane math | Depends on |
 |---|---|---|---|
