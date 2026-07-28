@@ -166,10 +166,21 @@ function main() {
     return;
   }
 
+  // A 2FA-protected account makes pnpm prompt for a one-time password, which
+  // needs a TTY it does not have when this runs from a script or an agent shell.
+  // --otp=<code> is the escape hatch; an automation token needs neither.
+  const otp = process.argv.find((arg) => arg.startsWith('--otp='));
+
   console.log('\nPublishing…');
   run(
     'pnpm',
-    ['-r', ...PUBLISHED_PACKAGES.flatMap((name) => ['--filter', name]), 'publish', '--no-git-checks'],
+    [
+      '-r',
+      ...PUBLISHED_PACKAGES.flatMap((name) => ['--filter', name]),
+      'publish',
+      '--no-git-checks',
+      ...(otp ? [otp] : []),
+    ],
     { cwd: repoRoot, stdio: 'inherit' },
   );
   console.log('Published.');
