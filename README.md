@@ -131,6 +131,8 @@ See [docs/EMBEDDING.md](docs/EMBEDDING.md) for the full attribute reference, aut
 - **Trusted vs untrusted prompt lanes.** Site-owner hints (`data-ff-*`, `context`) ride a trusted lane; user text, images, and documents ride a physically separate untrusted lane the model is instructed to treat as data, never instructions.
 - **Privacy.** Nothing from the request body is logged — no context text, field values, or image bytes. Only operational metadata (key id, counts, tokens, latency, error class).
 
+Found a vulnerability? See [SECURITY.md](SECURITY.md) — it covers private reporting, what is in scope, and the design risks we have deliberately accepted (so you can skip reporting those).
+
 ## Browser support
 
 Evergreen Chrome, Firefox, and Edge, plus Safari 15.4+. The in-flight tracer effect uses `mask-composite`, which sets the Safari 15.4 floor. The input panel opens via the [Popover API](https://developer.mozilla.org/en-US/docs/Web/API/Popover_API) (Baseline; Safari 17+) with a `position: fixed` fallback on older engines.
