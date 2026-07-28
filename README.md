@@ -161,6 +161,8 @@ pnpm verify      # build + lint + unit tests + bundle-size gate
 pnpm test:e2e    # Playwright acceptance suite
 ```
 
+Both run with **no credentials** — see [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor path, the local-gates setup (there is no hosted CI), and the example-port gotcha.
+
 Releases go through [changesets](https://github.com/changesets/changesets): `pnpm changeset` → `pnpm version-packages` → `pnpm release`. `@fieldfox/widget` and `@fieldfox/shared` version in lockstep; the server and examples stay private.
 
 **`pnpm release` is the only sanctioned publish path.** Publishing by hand from inside a package directory is what shipped 0.1.0 uninstallable: `npm publish` does not rewrite `workspace:*` dependency specs, so consumers got a manifest npm refuses with `EUNSUPPORTEDPROTOCOL`. The script refuses to run outside the repo root, asserts no `workspace:`/`link:`/`file:` spec survived into the packed tarball, and installs that tarball into a scratch directory to prove it resolves — all before the registry sees anything. Rehearse with `pnpm release:dry`.
