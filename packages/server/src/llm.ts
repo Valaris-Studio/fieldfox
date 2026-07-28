@@ -94,10 +94,21 @@ function strictFormat(): ResponseFormat {
   };
 }
 
+// Models wrap JSON in a markdown fence even under json_object mode, and OpenAI-
+// compatible proxies commonly accept `response_format` with a 200 and then
+// ignore it — so the fence survives to here. Unwrapping is safe: the payload
+// still has to satisfy ModelFillPlan below, so a fence never widens what we
+// accept, it only stops us discarding output that is otherwise valid.
+const FENCED_JSON = /^\s*```(?:json)?\s*\n?([\s\S]*?)\n?\s*```\s*$/;
+
+function stripCodeFence(raw: string): string {
+  return FENCED_JSON.exec(raw)?.[1] ?? raw;
+}
+
 function parseAndValidate(raw: string): ModelFillPlanType {
   let json: unknown;
   try {
-    json = JSON.parse(raw);
+    json = JSON.parse(stripCodeFence(raw));
   } catch {
     throw new FillPlanUnrecoverable('model output is not valid JSON', 'parse');
   }

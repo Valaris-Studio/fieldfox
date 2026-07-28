@@ -88,6 +88,42 @@ describe('POST /api/fill', () => {
     expect(plan.fills).toContainEqual({ fieldId: 'f_name', action: 'set', value: 'Grace Hopper' });
   });
 
+  // OpenAI-compatible proxies commonly accept response_format with a 200 and
+  // then ignore it, so the plan arrives inside a markdown fence on rung 1.
+  test('a ```json fenced plan is unwrapped, not rejected as invalid JSON', async () => {
+    const plan = JSON.stringify({ fills: [{ fieldId: 'f_name', action: 'set', value: 'Ada' }] });
+    const app = testApp(mockCaller('```json\n' + plan + '\n```'));
+    const res = await post(app, validRequest());
+    expect(res.status).toBe(200);
+    expect((await res.json()).fills).toContainEqual({
+      fieldId: 'f_name',
+      action: 'set',
+      value: 'Ada',
+    });
+  });
+
+  test('a bare ``` fence (no language tag) is unwrapped too', async () => {
+    const plan = JSON.stringify({ fills: [{ fieldId: 'f_name', action: 'set', value: 'Ada' }] });
+    const app = testApp(mockCaller('```\n' + plan + '\n```'));
+    const res = await post(app, validRequest());
+    expect(res.status).toBe(200);
+  });
+
+  // Unwrapping must not become a licence to accept prose: only a fence that
+  // wraps the WHOLE payload is stripped, and what's inside still has to validate.
+  test('a fence wrapping non-JSON is still a 502, not a silent pass', async () => {
+    const app = testApp(mockCaller('```json\nsorry, I cannot help with that\n```'));
+    const res = await post(app, validRequest());
+    expect(res.status).toBe(502);
+  });
+
+  test('unfenced JSON is untouched by the unwrapping', async () => {
+    const plan = JSON.stringify({ fills: [{ fieldId: 'f_name', action: 'set', value: 'Ada' }] });
+    const app = testApp(mockCaller(plan));
+    const res = await post(app, validRequest());
+    expect(res.status).toBe(200);
+  });
+
   test('invalid request (malformed formSchema) → 400 with zod issues', async () => {
     // schemaVersion stays valid so the request clears the version-skew guardrail
     // (bad schemaVersion is now a 426, covered in guardrails.test.ts) and reaches
