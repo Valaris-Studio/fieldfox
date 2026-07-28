@@ -115,6 +115,29 @@ before the provider call); the rest are guardrail-middleware refusals. `Origin`
 is spoofable by non-browser clients, so the allowlist is defense-in-depth on top
 of the site key — never the primary control.
 
+## Site-key resolver (optional)
+
+The `FIELDFOX_SITE_KEYS` map is read once at boot, so adding or revoking a key
+needs a redeploy. Pass `resolveSiteKey` to `createApp` to look keys up in your
+own store instead:
+
+```ts
+createApp({
+  async resolveSiteKey(siteKey) {
+    const row = await db.siteKeys.findActive(siteKey);
+    return row && { origins: row.origins, dailyTokenBudget: row.dailyTokenBudget };
+  },
+});
+```
+
+Async by design — a lookup is the point. Returning `undefined` refuses the key
+with `401 unknown_site_key`; a presented key is **never** demoted to the free
+lane. The returned policy is shape-validated, the resolver takes precedence over
+the static map, and keyless requests skip it entirely (they are the free lane).
+Omitted → the static map is the sole authority, exactly as before.
+
+See [SELF-HOSTING.md](../../docs/SELF-HOSTING.md#keys-from-your-own-store-instead-of-the-env-map).
+
 ## Operational-counter store
 
 Rate windows, token budgets, and kill-switch state live behind the

@@ -95,6 +95,32 @@ echo "ffx_pk_$(openssl rand -hex 16)"
 
 Because the server scopes each key to an origin allowlist and a daily budget, the key is safe to place in browser HTML. It distinguishes callers so you can attribute budget and revoke access per embed.
 
+### Keys from your own store instead of the env map
+
+The map above is read once at boot, which means adding a key or revoking one needs a redeploy. Past a handful of embeds that gets painful — and a revocation you cannot apply until the next deploy is a real problem, not a cosmetic one.
+
+Mount the app yourself and pass `resolveSiteKey` to look keys up wherever you already keep them:
+
+```ts
+import { createApp, type SiteKeyPolicy } from '@fieldfox/server';
+
+const app = createApp({
+  async resolveSiteKey(siteKey): Promise<SiteKeyPolicy | undefined> {
+    const row = await db.siteKeys.findActive(siteKey);
+    return row && { origins: row.origins, dailyTokenBudget: row.dailyTokenBudget };
+  },
+});
+```
+
+- **Async on purpose** — a database or cache lookup is the point. A key created at 10:00 works at 10:01, and a revocation takes effect on the next request.
+- **Return `undefined` to reject.** A presented key that resolves to nothing is refused with `401 unknown_site_key`. It is **never** demoted to the free lane: serving a revoked key on the cheap shared allowance would answer `200` and the integrator would never learn the key is wrong.
+- **The returned policy is validated**, not trusted — a malformed one (a bad row mapping, say) is refused as `401` rather than crashing the request.
+- **The resolver wins over the static map** for the same key, so a stale env entry cannot outrank a revocation in your store.
+- **Keyless requests never reach it** — absence of a key still means the free lane, so anonymous traffic costs no lookup.
+- **Omit it and nothing changes**: the boot-time map remains the sole authority, exactly as before.
+
+Everything else — origin allowlist, rate limits, budgets — applies to a resolved policy identically. The resolver decides *which* policy, never *whether* the checks run.
+
 ### Global limits (optional — defaults shown)
 
 | Env var | Default | Meaning |

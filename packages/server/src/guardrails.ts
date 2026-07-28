@@ -26,10 +26,36 @@ declare module 'hono' {
   }
 }
 
+// Resolves a presented site key to its policy, or undefined if the key is not
+// valid. Async because the point is a lookup in the operator's own store: a key
+// created or revoked at 10:00 takes effect at 10:01 with no redeploy, which the
+// boot-time `config.siteKeys` map cannot do.
+//
+// It returns the SAME SiteKeyPolicy the static map holds — nothing richer. Any
+// notion of accounts or credits belongs to whatever calls this, never here.
+export type SiteKeyResolver = (siteKey: string) => Promise<SiteKeyPolicy | undefined>;
+
+// A policy is only usable if it carries the two fields every downstream check
+// reads. Deliberately structural rather than a zod parse: this runs per keyed
+// request, and the fields are few enough that the check stays obvious.
+function isUsablePolicy(value: unknown): value is SiteKeyPolicy {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<SiteKeyPolicy>;
+  return (
+    Array.isArray(candidate.origins) &&
+    candidate.origins.length > 0 &&
+    typeof candidate.dailyTokenBudget === 'number' &&
+    candidate.dailyTokenBudget > 0
+  );
+}
+
 export interface GuardrailDeps {
   config: GuardrailConfig;
   store: RateBudgetStore;
   logger?: MetaLogger;
+  // Optional. Absent → the static config.siteKeys map is the sole authority,
+  // exactly as before this seam existed.
+  resolveSiteKey?: SiteKeyResolver;
   // Override only in tests that need a fixed client IP; production reads headers.
   clientIp?: (c: Context) => string;
 }
@@ -105,7 +131,7 @@ function estimateTokens(contextChars: number, imageCount: number, documentChars 
 // told to update regardless of its key) → auth → origin → rate → budget kill
 // switch → image caps → charge budget. Each stage logs metadata only.
 export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
-  const { config, store } = deps;
+  const { config, store, resolveSiteKey } = deps;
   const log = deps.logger ?? consoleMetaLogger;
   const ipOf = deps.clientIp ?? clientIpOf;
 
@@ -200,13 +226,36 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
         allowanceCheck = { key: `free-allowance:${origin}`, allowance: freeTier.dailyFillAllowance };
       }
     } else {
-      // Site-key auth (401). Unknown or missing key → refuse.
-      if (!presentedKey || !presentedKey.startsWith(SITE_KEY_PREFIX) || !(presentedKey in config.siteKeys)) {
+      // Site-key auth (401). Unknown or missing key → refuse. The prefix check
+      // stays local and runs first, so a resolver backed by a database is never
+      // asked about obvious garbage.
+      if (!presentedKey || !presentedKey.startsWith(SITE_KEY_PREFIX)) {
+        log({ event: 'refused', status: 401, reason: 'unknown_site_key' });
+        return refuse(c, 401, { error: 'unknown_site_key', message: 'missing or unknown site key' });
+      }
+
+      // The resolver, when supplied, is the sole authority: a stale static entry
+      // must never outrank a revocation applied in the operator's real store.
+      const resolved = resolveSiteKey
+        ? await resolveSiteKey(presentedKey)
+        : config.siteKeys[presentedKey];
+
+      // A PRESENTED key that resolves to nothing is 401 — never a fallthrough to
+      // the free lane. Demoting it there would serve a revoked or typo'd key on
+      // the cheap shared allowance and answer 200, so the integrator would never
+      // learn the key is wrong.
+      //
+      // The shape is checked rather than trusted: a resolver is operator code
+      // reaching a database, and a malformed policy (say `{}` from a bad row
+      // mapping) would otherwise crash mid-request with a 500 that diagnoses
+      // nothing. Refusing at the gate keeps a resolver bug from ever looking
+      // like a server fault.
+      if (!isUsablePolicy(resolved)) {
         log({ event: 'refused', status: 401, reason: 'unknown_site_key' });
         return refuse(c, 401, { error: 'unknown_site_key', message: 'missing or unknown site key' });
       }
       siteKey = presentedKey;
-      policy = config.siteKeys[presentedKey]!;
+      policy = resolved;
 
       // 3. Origin allowlist (403). Exact match only. NOTE: Origin is trivially
       // spoofable by non-browser clients, so this is defense-in-depth layered on

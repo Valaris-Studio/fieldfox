@@ -3,7 +3,7 @@ import { createFillHandler } from './fill.js';
 import type { ChatCompletion } from './llm.js';
 import { loadConfig, type GuardrailConfig } from './config.js';
 import { InMemoryStore, type RateBudgetStore } from './store.js';
-import { guardrails } from './guardrails.js';
+import { guardrails, type SiteKeyResolver } from './guardrails.js';
 import type { MetaLogger } from './log.js';
 
 // Headers the widget always sends on the POST; the floor even when a client
@@ -38,6 +38,10 @@ export interface AppOptions {
   config?: GuardrailConfig;
   // Operational-counter store; defaults to the single-instance in-memory one.
   store?: RateBudgetStore;
+  // Resolve a presented site key to its policy from your own store instead of
+  // the boot-time config.siteKeys map, so creating or revoking a key takes
+  // effect without a redeploy. Omitted → the static map is the sole authority.
+  resolveSiteKey?: SiteKeyResolver;
   logger?: MetaLogger;
 }
 
@@ -66,7 +70,12 @@ export function createApp(options: AppOptions = {}): Hono {
   // Guardrails run BEFORE the fill handler (PLAN §0, card D2). The config getter
   // resolves per request so a lazily-loaded config is picked up.
   app.use('/api/fill', (c, next) =>
-    guardrails({ config: getConfig(), store, logger: options.logger })(c, next),
+    guardrails({
+      config: getConfig(),
+      store,
+      resolveSiteKey: options.resolveSiteKey,
+      logger: options.logger,
+    })(c, next),
   );
   app.post('/api/fill', createFillHandler(options.llmCaller, store, options.logger));
 
