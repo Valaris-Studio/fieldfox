@@ -2,6 +2,8 @@
 
 This guide is for operators deploying the Fieldfox server. The server turns a form schema plus user context into a validated fill plan by calling your OpenAI-compatible provider, and it holds every credential and guardrail so nothing sensitive reaches the browser.
 
+Self-hosting is a **first-class, permanently supported** way to run Fieldfox — not a trial mode and not a stepping stone to the hosted service. You get the same MIT stack we run, your own credentials, and **no metering**: the free-lane allowance and credit machinery described in [CLOUD.md](./CLOUD.md) are off unless you deliberately configure them. The widget is byte-identical in both modes; hosted-only capability lives in the server, never behind a feature flag in the widget.
+
 For the terse package-level reference, see [packages/server/README.md](../packages/server/README.md). This guide is the canonical deployer document; where the two overlap, they agree.
 
 ## Prerequisites

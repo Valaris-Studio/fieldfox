@@ -1,6 +1,19 @@
 # Fieldfox
 
-Fieldfox is a `<field-fox>` web component that fills any web form from free text, pasted or uploaded images, and attached documents. The widget introspects the target form, sends its schema plus the user's context to a small self-hosted server that holds your LLM credentials, and applies the returned plan — filling each field or leaving it exactly as it was. It never submits the form.
+Fieldfox is a `<field-fox>` web component that fills any web form from free text, pasted or uploaded images, and attached documents. The widget introspects the target form, sends its schema plus the user's context to a server that holds the LLM credentials, and applies the returned plan — filling each field or leaving it exactly as it was. It never submits the form.
+
+Run it two ways. The widget is **identical** in both; the only difference is which endpoint it points at and whether that endpoint meters.
+
+| | [Hosted](#hosted-not-live-yet) | [Self-hosted](#self-hosted-works-today) |
+|---|---|---|
+| **Status** | Not live yet — in progress | **Available now** |
+| Setup | Paste one snippet | Run the server with your own provider key |
+| Account / API key | None to start | None — it's your infrastructure |
+| LLM credentials | Ours | Yours |
+| Metering | Free allowance, then credits | None |
+| License | — | MIT, same stack |
+
+Self-hosting is **permanently supported**, not a trial mode. Open source here is a real commitment: hosted-only capability lives in the server, never behind a feature flag in the widget, and the OSS server is the same server we run.
 
 - **Framework-agnostic custom element** — drop the `<field-fox>` tag onto any HTML/JS/CSS page; it works with React, Vue, plain HTML, and forms inside a native `<dialog>`.
 - **Zero runtime dependencies, ~18KB gzip** — the widget ships as a self-registering IIFE (script tag) or ESM module. Its UI lives entirely in an open shadow root and never wraps, moves, or injects into your form.
@@ -8,17 +21,38 @@ Fieldfox is a `<field-fox>` web component that fills any web form from free text
 - **Design-system widgets, not just native inputs** — ARIA comboboxes/selects, switches, and ProseMirror/tiptap editors are filled through their accessibility contract, so shadcn, Radix and friends work with no adapter. A widget fieldfox can't confirm is left untouched rather than guessed at.
 - **Adjustment mode for integrators** — an opt-in `adjust` overlay to inspect and live-edit each field's `data-ff-*` annotations, test them against a fill, and copy the result back to source (dev-only; not for production pages).
 - **Safety invariants** — never auto-submits; fills or leaves each field with per-field readback-or-revert; disables affected fields while a request is in flight.
-- **Credentials stay server-side** — the self-hosted [Hono](https://hono.dev) server holds the OpenAI-compatible API key and enforces every guardrail (site keys, origin allowlist, rate limits, per-key daily token budget, image caps). No LLM call ever happens in the browser.
+- **Credentials stay server-side, in both modes** — the [Hono](https://hono.dev) server holds the OpenAI-compatible API key and enforces every guardrail (site keys, origin allowlist, rate limits, per-key daily token budget, image caps). No LLM call ever happens in the browser.
+- **Runs with no credentials at all** — the test suite mocks at the *provider* boundary, so a fresh clone runs the full e2e acceptance suite without a single API key.
 
 ## How it works
 
 1. The user clicks the trigger icon at the form's top-right corner and describes what to fill (text, images, or documents).
-2. The widget introspects the form into a field schema and `POST`s it, with the user's context, to your server at `/api/fill`.
-3. The server applies its guardrails, builds a two-lane prompt (trusted site-author hints kept separate from untrusted user content), and calls your OpenAI-compatible provider under a structured-output contract.
+2. The widget introspects the form into a field schema and `POST`s it, with the user's context, to the fill endpoint — your own server when self-hosting, ours in hosted mode.
+3. The server applies its guardrails, builds a two-lane prompt (trusted site-author hints kept separate from untrusted user content), and calls the OpenAI-compatible provider under a structured-output contract.
 4. The provider returns a fill plan; the server re-validates it, drops any hallucinated fields or out-of-option values, and responds.
 5. The widget applies the plan field by field. Each field is set or left untouched, and every write is read back and reverted if it didn't take. The form is never submitted — the user reviews and submits.
 
-## Quickstart (self-host in 5 minutes)
+## Hosted (not live yet)
+
+The goal is that you paste one snippet and it fills forms immediately — no account, no API key, no server, no config:
+
+```html
+<!-- Not live yet: this snippet has no backend to reach today. -->
+<script src="https://cdn.jsdelivr.net/npm/@fieldfox/widget@0.1.1/dist/fieldfox.js"></script>
+<field-fox target="#my-form"></field-fox>
+```
+
+**This does not work yet.** The widget half is built and shipped — with no `endpoint` attribute it already posts to a compiled-in hosted URL — but the service behind that URL is not deployed and the hostname is a placeholder. Pasting the snippet today fails at the network layer. Use [self-hosting](#self-hosted-works-today), which works now.
+
+When it does land, here is how it will be metered, so you can judge it before you adopt it:
+
+- **Your site is recognized from the request's `Origin`.** Nothing to obtain, nothing to configure.
+- **A free allowance per site per day**, served on a deliberately cheap model. The exact allowance is set by the operator and published before launch — see [docs/CLOUD.md](docs/CLOUD.md) for the mechanism.
+- **When the allowance runs out**, the widget says so plainly — *"That used up the free fills for this site today — your form is unchanged"* — alongside a link to create an account. It is a self-service offer, not a generic error, and your form is left untouched.
+- **Signup is never a precondition for trying it** — only for continuing past the free allowance.
+- **Self-hosting is never metered.** If you run the server, none of the above applies to you.
+
+## Self-hosted (works today)
 
 ```sh
 git clone https://github.com/Valaris-Studio/fieldfox.git
@@ -39,13 +73,17 @@ pnpm dev
 
 `pnpm dev` builds the widget and starts three processes: the API on `http://localhost:8787`, a plain-HTML example on `http://localhost:8080`, and a React example on `http://localhost:5173`. Open the plain-HTML host and click the fox icon at the form's top-right corner.
 
-**No LLM credentials yet?** The mock provider stack lets you exercise the whole flow with zero keys:
+### No LLM credentials? Run the whole thing anyway
+
+Fieldfox mocks at the **provider boundary** ([`e2e/mock-provider.mjs`](e2e/mock-provider.mjs)), not at our own HTTP layer. One command boots a mock OpenAI-compatible provider alongside the full harness:
 
 ```sh
 FIELDFOX_E2E_SERVER_PORT=8787 node scripts/e2e-env.mjs
 ```
 
-This boots a mock OpenAI-compatible provider alongside the full harness, so you can click through a real fill end to end before signing up with any provider. The port override matters: the example pages POST to `:8787`, while the script's default (`8794`, chosen because `8787` is often occupied on dev machines) is only reachable by the e2e suite, which remaps the port in-page.
+You get a real fill end to end — real widget, real server, real guardrails, real wire contract — before signing up with any provider. The same property means **`pnpm test:e2e` passes on a clean clone with zero credentials**, so a contributor can run the entire acceptance suite on day one.
+
+The port override matters: the example pages POST to `:8787`, while the script's default (`8794`, chosen because `8787` is often occupied on dev machines) is only reachable by the e2e suite, which remaps the port in-page.
 
 ## Embed it
 
@@ -101,16 +139,16 @@ Evergreen Chrome, Firefox, and Edge, plus Safari 15.4+. The in-flight tracer eff
 
 - [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md) — deploy and configure the server.
 - [docs/EMBEDDING.md](docs/EMBEDDING.md) — integrate the widget into a page or app.
+- [docs/CLOUD.md](docs/CLOUD.md) — the hosted free lane: attribution, limits, and what exhaustion looks like.
+- [docs/ROADMAP.md](docs/ROADMAP.md) — the plan of record for the hosted tier.
 - [packages/server/README.md](packages/server/README.md) — terse package-level server reference.
 - [docs/PLAN.md](docs/PLAN.md) and [docs/RESEARCH.md](docs/RESEARCH.md) — architecture, locked decisions, and the research behind them.
 
 ## Roadmap
 
-**A hosted tier is where Fieldfox is going.** The goal is that you paste one snippet into your page and it fills forms immediately — no account, no API key, no server. Our backend recognizes your site, serves a free allowance, and only then asks you to create an account and buy credits or a plan. Signing up should be something you do *after* seeing it work, not before.
+The hosted service described [above](#hosted-not-live-yet) is the next milestone: deploy the backend, then accounts and credits. Self-hosting stays first-class and permanently supported throughout — same MIT stack, your own credentials, no metering.
 
-Self-hosting stays first-class and permanently supported: the same MIT stack, your own credentials, no metering. The widget is identical either way — the only difference is which endpoint it points at, and whether that endpoint meters. Hosted-only capability lives in the server, never behind a feature flag in the widget.
-
-Until the hosted service ships, self-hosting is the only way to run Fieldfox, and the quickstart above is the path.
+Until it ships, self-hosting is the only way to run Fieldfox. See [docs/ROADMAP.md](docs/ROADMAP.md) for the plan of record.
 
 ## Development & contributing
 

@@ -73,6 +73,8 @@ The widget is **identical** in both modes — same bundle, same bytes, no mode f
 
 No account, no key, no server. Free-lane limits and what happens when the allowance runs out are documented in [docs/CLOUD.md](CLOUD.md).
 
+> **Not live yet.** The widget side works — omitting `endpoint` already posts to the compiled-in hosted URL — but the service behind it is not deployed and the hostname is still a placeholder, so this embed fails at the network layer today. Set `endpoint` and self-host until it ships.
+
 **Self-hosted (set `endpoint`)** — the widget posts wherever you point it and sends nothing hosted-specific:
 
 ```html
@@ -253,7 +255,7 @@ Matching tolerates case, accents and whitespace differences — not partial ones
 
 The widget makes no external network calls beyond your fill endpoint, and loads no external fonts or images. For a strict host CSP:
 
-- **`connect-src`** must allow the `endpoint` origin (the `POST /api/fill` target) — `https://api.fieldfox.dev` on the hosted default, or your own server's origin when `endpoint` is set.
+- **`connect-src`** must allow the `endpoint` origin (the `POST /api/fill` target) — your own server's origin when `endpoint` is set, or the hosted service's origin when it is omitted (that host is compiled into the bundle and is still a placeholder pending launch; see [SELF-HOSTING.md](SELF-HOSTING.md#building-a-widget-bundle-for-your-own-host)).
 - **`style-src`** — during a fill, the widget injects one small `<style>` tag into `document.head` to dim affected fields (they live in your light DOM, which a shadow stylesheet can't reach). Everything else lives inside the widget's shadow root.
 - **`script-src`** must allow the CDN or self-host origin serving the widget bundle.
 
