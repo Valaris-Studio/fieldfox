@@ -26,9 +26,10 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-// Only these are published. packages/server is private:true, and the examples
-// are not products.
-export const PUBLISHED_PACKAGES = ['@fieldfox/widget', '@fieldfox/shared'];
+// Only these are published; the examples are not products. The server joined
+// when the private cloud repo began composing it from npm — consuming the same
+// package a self-hoster installs is what keeps the OSS public API honest.
+export const PUBLISHED_PACKAGES = ['@fieldfox/widget', '@fieldfox/shared', '@fieldfox/server'];
 
 // A dependency spec npm cannot resolve from a published tarball. `workspace:` is
 // the one that actually shipped broken; `link:` and `file:` fail the same way

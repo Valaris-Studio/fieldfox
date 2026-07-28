@@ -7,5 +7,5 @@
   "fixed": [["@fieldfox/widget", "@fieldfox/shared"]],
   "linked": [],
   "updateInternalDependencies": "patch",
-  "ignore": ["@fieldfox/server", "@fieldfox/example-react-host"]
+  "ignore": ["@fieldfox/example-react-host"]
 }

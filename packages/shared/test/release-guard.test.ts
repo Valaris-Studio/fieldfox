@@ -63,10 +63,31 @@ test('a manifest with no dependency fields at all passes', () => {
   expect(unpublishableSpecsIn({ name: '@fieldfox/shared', version: '0.1.1' })).toEqual([]);
 });
 
-test('the publish set is exactly the two public packages', () => {
-  // packages/server is private:true and the examples are not products; adding a
-  // package here without making it publishable would fail at the registry.
-  expect(PUBLISHED_PACKAGES).toEqual(['@fieldfox/widget', '@fieldfox/shared']);
+test('the publish set is exactly the three public packages', () => {
+  // The examples are not products. packages/server joined the set when the cloud
+  // repo began composing it from npm (P2-0b) — the boundary rule requires the
+  // cloud to consume the same package a self-hoster installs.
+  expect(PUBLISHED_PACKAGES).toEqual([
+    '@fieldfox/widget',
+    '@fieldfox/shared',
+    '@fieldfox/server',
+  ]);
+});
+
+// The allowlist is a list of names; nothing about being on it makes a package
+// publishable. `private: true` fails at the registry AFTER the tarball checks
+// have all passed, so assert the manifests agree with the list up front.
+test('every listed package is actually publishable', async () => {
+  const { readFileSync } = await import('node:fs');
+  const dirOf = { '@fieldfox/widget': 'widget', '@fieldfox/shared': 'shared', '@fieldfox/server': 'server' };
+  for (const name of PUBLISHED_PACKAGES) {
+    const manifest = JSON.parse(
+      readFileSync(new URL(`../../${dirOf[name]}/package.json`, import.meta.url), 'utf8'),
+    );
+    expect(manifest.private, `${name} is private:true and cannot be published`).toBeUndefined();
+    expect(manifest.version, `${name} still has a placeholder version`).not.toBe('0.0.0');
+    expect(manifest.files, `${name} publishes no files allowlist`).toContain('dist');
+  }
 });
 
 test('the release script refuses to run from inside a package directory', () => {
