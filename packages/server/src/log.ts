@@ -11,6 +11,12 @@ export interface RequestMeta {
   fieldCount?: number;
   imageCount?: number;
   estimatedTokens?: number;
+  // What the provider actually reported for the whole ladder run, and whether it
+  // reported anything at all. `usageReported:false` means the daily budget is
+  // running on the pre-call ESTIMATE — which docs/CLOUD.md notes runs below real
+  // billed usage — so an operator needs to see that rather than infer it.
+  actualTokens?: number;
+  usageReported?: boolean;
   latencyMs?: number;
   errorClass?: string;
   reason?: string;

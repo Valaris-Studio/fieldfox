@@ -83,7 +83,16 @@ All four counters live behind the `RateBudgetStore` interface. The in-memory def
 
 ## The number: what an abuser can cost us per day
 
-The ceiling is enforced against the **pre-call token estimate** (~4 characters per token, plus a flat 1000 tokens per image), charged before the provider call. Post-call reconciliation exists as a seam but the ladder does not yet return real usage, so the estimate stands. The bound is therefore in *estimated* tokens, and real billed usage will differ — the estimate ignores the prompt scaffold and all output tokens, so **actual spend runs somewhat above the ceiling**, not below it. Treat the number as an order-of-magnitude bound, not a billing guarantee.
+The ceiling is enforced against the **pre-call token estimate** (~4 characters per token, plus a flat 1000 tokens per image, plus decoded document bytes), charged before the provider call so an over-large request costs nothing.
+
+**After the call, the estimate is replaced by what the provider actually reported.** The ladder returns usage summed across every rung — a rung-2 repair retry is two billable calls even though the customer is charged once — and the daily budget is reconciled against that real number. So the ceiling now binds on measured consumption, not on a guess.
+
+Two caveats remain, and both are visible rather than assumed:
+
+- **Not every provider reports usage.** When none is returned the estimate stands, exactly as before. That case is logged as `usageReported:false` on the `settled` event, so an operator can tell which number their budget is actually running on instead of inferring it.
+- **The pre-call ceiling is still an estimate**, by construction — it has to be, since it is enforced *before* the call. The estimate ignores the prompt scaffold and all output tokens, so a request that squeaks under the ceiling can bill somewhat above it. Reconciliation corrects the running total afterwards; it does not retroactively refuse the request.
+
+A reported count that is negative or unparseable is treated as **unknown** rather than applied: reconciliation subtracts the estimate from the actual, so a bogus negative would credit the caller and erase consumption they legitimately accrued.
 
 With a global ceiling of **2,000,000 estimated tokens/day**:
 

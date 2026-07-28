@@ -23,7 +23,50 @@ export type ChatCompletion = (args: {
   messages: ChatMessage[];
   responseFormat: ResponseFormat;
   model?: string;
-}) => Promise<string>;
+}) => Promise<string | ChatCompletionResult>;
+
+// What a provider reported for one call. Every field is optional because
+// OpenAI-compatible implementations disagree: some send `total_tokens`, some
+// only the parts, and some omit `usage` entirely.
+export interface TokenUsage {
+  totalTokens?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+}
+
+// A caller may return the bare content string (the original contract, still
+// valid and still what every mock in the test suite does) or this richer shape
+// carrying what the call actually cost.
+export interface ChatCompletionResult {
+  content: string;
+  usage?: TokenUsage;
+}
+
+// Collapses a provider's usage into one number, or undefined when it reported
+// nothing usable. Undefined and 0 are deliberately different: 0 would silently
+// reset a caller's consumption on every fill, so an unreadable usage object must
+// read as "unknown" and leave the pre-call estimate standing.
+export function totalTokensOf(usage: TokenUsage | undefined): number | undefined {
+  if (!usage) return undefined;
+  // A NEGATIVE count is rejected rather than clamped: reconcile subtracts the
+  // estimate from it, so a provider reporting -500 would credit the caller and
+  // erase consumption they legitimately accrued. Nonsense reads as "unknown",
+  // which leaves the pre-call estimate standing.
+  const usable = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+  if (usable(usage.totalTokens)) return usage.totalTokens;
+  const parts = [usage.promptTokens, usage.completionTokens].filter(usable);
+  return parts.length > 0 ? parts.reduce((sum, part) => sum + part, 0) : undefined;
+}
+
+// The ladder's result: the validated plan plus what the whole run cost. `usage`
+// is undefined when NO rung reported anything, which is what tells the handler
+// to leave the estimate in place rather than charge zero.
+export interface LadderResult {
+  plan: ModelFillPlanType;
+  usage?: number;
+}
 
 export type ResponseFormat =
   | { type: 'json_schema'; json_schema: { name: string; strict: true; schema: Record<string, unknown> } }
@@ -77,12 +120,30 @@ export async function planWithLadder(
   request: PromptRequest,
   chat: ChatCompletion,
   options: PlanOptions = {},
-): Promise<ModelFillPlanType> {
+): Promise<LadderResult> {
   const { model } = options;
+
+  // Usage accrues across EVERY rung: a rung-2 repair retry is a second billable
+  // call even though the customer is charged once, so a run that walks the
+  // ladder must report the sum, not the last rung's number.
+  let billedTokens: number | undefined;
+  const record = (usage: TokenUsage | undefined) => {
+    const total = totalTokensOf(usage);
+    if (total !== undefined) billedTokens = (billedTokens ?? 0) + total;
+  };
+
+  // Normalizes the two accepted return shapes and banks any reported usage.
+  const call = async (messages: ChatMessage[], responseFormat: ResponseFormat): Promise<string> => {
+    const result = await chat({ messages, responseFormat, model });
+    if (typeof result === 'string') return result;
+    record(result.usage);
+    return result.content;
+  };
+
   // rung 1: strict json_schema
   try {
-    const raw = await chat({ messages: buildPrompt(request), responseFormat: strictFormat(), model });
-    return parseAndValidate(raw);
+    const raw = await call(buildPrompt(request), strictFormat());
+    return { plan: parseAndValidate(raw), usage: billedTokens };
   } catch (err) {
     if (!(err instanceof ResponseFormatUnsupported)) throw err;
     // fall through to rung 2
@@ -90,15 +151,15 @@ export async function planWithLadder(
 
   // rung 2: json_object + inlined schema, then one repair retry on failure.
   const inlineSchema = fillPlanJsonSchema();
-  const firstMessages = buildPrompt(request, { inlineSchema });
-  const firstRaw = await chat({ messages: firstMessages, responseFormat: { type: 'json_object' }, model });
+  const firstRaw = await call(buildPrompt(request, { inlineSchema }), { type: 'json_object' });
   try {
-    return parseAndValidate(firstRaw);
+    return { plan: parseAndValidate(firstRaw), usage: billedTokens };
   } catch (err) {
     if (!(err instanceof FillPlanUnrecoverable)) throw err;
     const repairMessages = buildPrompt(request, { inlineSchema, repairError: err.message });
-    const repairRaw = await chat({ messages: repairMessages, responseFormat: { type: 'json_object' }, model });
-    return parseAndValidate(repairRaw); // rung 3: a throw here reaches the handler → 502
+    const repairRaw = await call(repairMessages, { type: 'json_object' });
+    // rung 3: a throw here reaches the handler → 502
+    return { plan: parseAndValidate(repairRaw), usage: billedTokens };
   }
 }
 
@@ -137,9 +198,22 @@ export function createChatCompletion(config: LlmConfig): ChatCompletion {
       throw new Error(`LLM HTTP ${res.status}: ${body}`);
     }
 
-    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const data = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+      usage?: { total_tokens?: number; prompt_tokens?: number; completion_tokens?: number };
+    };
     const content = data.choices?.[0]?.message?.content;
     if (typeof content !== 'string') throw new Error('LLM response missing message content');
-    return content;
+    // snake_case on the wire, camelCase internally. Absent `usage` stays absent
+    // rather than becoming zeroes, so the caller can tell "nothing reported"
+    // from "reported nothing consumed".
+    return {
+      content,
+      usage: data.usage && {
+        totalTokens: data.usage.total_tokens,
+        promptTokens: data.usage.prompt_tokens,
+        completionTokens: data.usage.completion_tokens,
+      },
+    };
   };
 }

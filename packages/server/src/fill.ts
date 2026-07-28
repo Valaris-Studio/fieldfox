@@ -184,16 +184,28 @@ export function createFillHandler(
     // → the caller uses its default (env) model.
     const modelOverride = c.get('fieldfoxModelOverride');
     try {
-      const modelPlan = await planWithLadder(request, caller, { model: modelOverride });
+      const { plan: modelPlan, usage } = await planWithLadder(request, caller, { model: modelOverride });
       const plan = cleanPlan(modelPlan, request.formSchema.fields);
-      // Reconcile the daily-budget charge with actual usage. planWithLadder does
-      // not surface a token count yet, so pass null (estimate stands) — the seam
-      // is here for when the ladder returns usage (RESEARCH §6 budget).
+      // Reconcile the pre-call estimate against what the provider actually
+      // billed, summed across every rung. `usage` is undefined when no rung
+      // reported anything, and reconcile() leaves the estimate standing on null
+      // rather than charging zero (RESEARCH §6 budget).
       const siteKey = c.get('fieldfoxSiteKey');
       const policy = c.get('fieldfoxPolicy');
+      const estimatedTokens = c.get('fieldfoxEstimatedTokens') ?? 0;
       if (store && siteKey && policy) {
-        await reconcile(store, siteKey, policy, c.get('fieldfoxEstimatedTokens') ?? 0, null);
+        await reconcile(store, siteKey, policy, estimatedTokens, usage ?? null);
       }
+      // A budget running on estimates is an operational fact, not a silent
+      // default: say which number the charge actually used.
+      logger({
+        event: 'settled',
+        status: 200,
+        siteKey,
+        estimatedTokens,
+        usageReported: usage !== undefined,
+        ...(usage !== undefined && { actualTokens: usage }),
+      });
       return c.json(plan, 200);
     } catch (err) {
       if (err instanceof FillPlanUnrecoverable) {
