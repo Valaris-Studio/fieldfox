@@ -35,6 +35,14 @@
     "hono": "^4",
     "zod": "^4"
   },
+  "peerDependencies": {
+    "hono": "^4"
+  },
+  "peerDependenciesMeta": {
+    "hono": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/node": "^24",
     "typescript": "^5.9",

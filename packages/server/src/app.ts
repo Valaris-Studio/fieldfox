@@ -48,14 +48,16 @@ export interface AppOptions {
 // Config load is deferred to the first guarded request so importing `app`
 // (tests, embedders) never requires env to be set and GET /health stays usable
 // on a misconfigured deploy.
-function lazyConfig(provided?: GuardrailConfig): () => GuardrailConfig {
+function lazyConfig(provided: GuardrailConfig | undefined, hasSiteKeyResolver: boolean): () => GuardrailConfig {
   let cached = provided;
-  return () => (cached ??= loadConfig());
+  return () => (cached ??= loadConfig({ hasSiteKeyResolver }));
 }
 
 export function createApp(options: AppOptions = {}): Hono {
   const app = new Hono();
-  const getConfig = lazyConfig(options.config);
+  // A resolver means this deployment owns its key lookup, so env need not carry
+  // a static key map (P2-1b).
+  const getConfig = lazyConfig(options.config, options.resolveSiteKey !== undefined);
   const store = options.store ?? new InMemoryStore();
 
   // GET /health is intentionally unguarded (liveness before config/auth).

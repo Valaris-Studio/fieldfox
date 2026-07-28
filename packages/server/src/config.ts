@@ -177,16 +177,27 @@ function intFromEnv(name: string): number | undefined {
   return n;
 }
 
+export interface LoadConfigOptions {
+  // Set when the deployment resolves keys through its own store (P2-3). Such a
+  // deployment has no static map to configure, so requiring one would defeat the
+  // resolver seam — see hasOwnKeySource below.
+  hasSiteKeyResolver?: boolean;
+}
+
 // Boot-time config from the documented env keys (see packages/server/README.md).
 // Undefined optionals let zod apply the defaults above.
-export function loadConfig(): GuardrailConfig {
+export function loadConfig(options: LoadConfigOptions = {}): GuardrailConfig {
   const modelAllowlistRaw = process.env.FIELDFOX_MODEL_ALLOWLIST;
   const freeTier = parseFreeTierEnv();
+  // A deployment has its own source of keys when the free lane serves keyless
+  // traffic (the hosted tier before any paying customer) or when a resolver
+  // looks keys up in its own store. Either way an absent env map is a valid
+  // configuration, not an error. With NEITHER, a server that booted would have
+  // no way to authorize any request at all — that stays a loud boot failure so a
+  // self-hoster hears about it at startup instead of debugging blanket 401s.
+  const hasOwnKeySource = Boolean(freeTier) || options.hasSiteKeyResolver === true;
   return resolveConfig({
-    // A free-lane-only deployment (the hosted tier before any paying customer)
-    // legitimately has no site keys, so the site-key config is only mandatory
-    // when the free lane is off.
-    siteKeys: freeTier ? parseOptionalSiteKeysEnv() : parseSiteKeysEnv(),
+    siteKeys: hasOwnKeySource ? parseOptionalSiteKeysEnv() : parseSiteKeysEnv(),
     freeTier,
     maxImages: intFromEnv('FIELDFOX_MAX_IMAGES'),
     maxImageBytes: intFromEnv('FIELDFOX_MAX_IMAGE_BYTES'),

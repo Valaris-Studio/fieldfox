@@ -6,6 +6,12 @@ export { app, createApp, type AppOptions } from './app.js';
 export type { SiteKeyResolver } from './guardrails.js';
 export type { SiteKeyPolicy, GuardrailConfig } from './config.js';
 
+// The sanctioned way to BUILD a GuardrailConfig. Exported because the type alone
+// is a trap: it has eight defaulted fields that only exist after this zod parse,
+// so an object literal that satisfies the type can still crash at request time
+// on a missing default. Pass a partial input; get a complete config back.
+export { resolveConfig } from './config.js';
+
 // Operational-counter stores. InMemoryStore is the single-instance default;
 // SharedKvStore backs a multi-instance deploy with any KV offering an atomic
 // increment (Redis/Valkey INCRBY, Cloudflare KV + Durable Object, Upstash).
