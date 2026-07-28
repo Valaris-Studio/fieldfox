@@ -3,8 +3,9 @@
 //   [server] fieldfox API on :8787, preconfigured with the dev site key below
 //   [plain]  static file server on :8080 → examples/plain-html
 //   [react]  vite dev server on :5173 → examples/react-host
-// FIELDFOX_LLM_* vars pass through from your shell, so exporting a real
-// provider base-url/key/model makes the full fill round trip work.
+// FIELDFOX_LLM_* comes from a gitignored .env at the repo root, or from your
+// shell — exporting a real provider base-url/key/model makes the full fill
+// round trip work. A shell export wins over the file.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -14,6 +15,23 @@ import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
+
+// A gitignored .env at the repo root is the documented place for dev provider
+// credentials. loadEnvFile OVERWRITES what's already in process.env, so snapshot
+// the shell's values and put them back: an explicit export must beat the file.
+const ENV_FILE = resolve(ROOT, '.env');
+const shellEnv = { ...process.env };
+try {
+  process.loadEnvFile(ENV_FILE);
+  Object.assign(process.env, shellEnv);
+} catch {
+  // No .env is normal — the shell (or the mock harness) may supply everything.
+}
+
+// The paid lane calls envLlmConfig(), which throws mid-request when these are
+// missing. Say so at boot instead of in a stack trace 30 seconds later.
+const LLM_VARS = ['FIELDFOX_LLM_BASE_URL', 'FIELDFOX_LLM_API_KEY', 'FIELDFOX_LLM_MODEL'];
+const missingLlmVars = LLM_VARS.filter((v) => !process.env[v]);
 
 // Must match the site-key attribute hardcoded in both example pages.
 const DEV_SITE_KEY = 'ffx_pk_dev0000000000000000000000000000';
@@ -148,3 +166,11 @@ fieldfox dev harness
   React host       http://localhost:${REACT_PORT}
   API              http://localhost:${SERVER_PORT}   (dev site key: ${DEV_SITE_KEY})
 `);
+
+if (missingLlmVars.length) {
+  console.warn(
+    `[dev] No provider credentials: ${missingLlmVars.join(', ')} unset.\n` +
+      `[dev] Pages load and forms introspect, but every fill fails with "missing LLM env".\n` +
+      `[dev] Fix: put them in ${ENV_FILE} (KEY=value per line) or export them before pnpm dev.`,
+  );
+}
