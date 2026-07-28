@@ -16,7 +16,9 @@ global spend ceiling, and the widget's `402` offer surface.
 
 Not shipped: anything that takes money, anything a customer can log into, and the
 deployed backend the default snippet already points at. `HOSTED_FILL_ENDPOINT` is
-`https://api.fieldfox.dev/api/fill` and nothing answers there yet.
+`https://api.fieldfox.dev/api/fill` — a placeholder for a domain we do not own, so a
+bare snippet fails at DNS today. That constant becomes a build-time value in P0-2, and
+the real hostname arrives with the P5-1 cutover.
 
 The gap between those two paragraphs is this roadmap.
 
@@ -28,10 +30,9 @@ The gap between those two paragraphs is this roadmap.
 | L2 | **Prepaid weighted credits.** text fill = 1, image fill = 3, document fill = 5. Packs (one-off Checkout) plus monthly plans that grant credits and unlock the better model. | One currency. Margin tracks cost shape instead of fighting it. |
 | L3 | **One Next.js app** (`apps/console`) for marketing, docs, auth, dashboard, and billing. | One design system, one deploy. |
 | L4 | **Free lane is untouched.** Anonymous, Origin-attributed, cheapest model, daily allowance. Signup is triggered by exhausting it, never before. | The north star survives monetization. |
-
-Hosting vendor is deliberately **not** locked — cards specify requirements (stable
-hostname, shared counter store, provider-level spend cap, spend alerting) and the
-vendor is chosen at deploy time.
+| L5 | **Deploy target is GCP** (Cloud Run + Cloud SQL). | Node container, no rewrite for an edge runtime. |
+| L6 | **No domain yet.** Ship behind the provider-generated URL; a custom domain is plugged in during the launch phase. | The widget's endpoint becomes a **build-time value** rather than a source constant, so the cutover is a rebuild and a republish. |
+| L7 | **Pricing is configuration, not code.** Every price, weight, pack size, and plan is a validated config value. | Prices can be tuned as real usage data arrives, with no code change and no redeploy of logic. One source of truth feeds the middleware, dashboard, checkout, and pricing page. |
 
 ## 2. The two-repo shape
 
@@ -51,21 +52,33 @@ in the public repo, and anything a self-hoster would need does not go in the pri
 Billing, Stripe keys, account data, and the console are private. Every seam they rely on
 is public.
 
+The private repo is **provisioned** as of 2026-07-27: `Valaris-Studio/fieldfox-cloud`,
+verified private, cloned as a sibling, with `.gitignore` and the boundary rule already in
+its first commit. Its workspace scaffold is card P2-1.
+
 ### What must never leak
 
 Real site keys, Stripe keys, database URLs, production LLM credentials, customer data.
-The public repo already gitignores `.env` and `.mcp.json`; the private repo needs the
-same discipline from its first commit.
+Both repos gitignore `.env*` and `.mcp.json` — in the private repo that landed in the
+initial commit, before any file that could carry a secret existed.
 
 ## 3. The credit system
 
 ### Weights
+
+Every number in this section is a **config default, not a constant** (L7). The table is
+where the defaults start; the config is what the running system reads.
 
 | Input | Credits | Why |
 |---|---|---|
 | Text only | 1 | The base case. |
 | Includes image(s) | 3 | Vision tokens dominate; the guardrail already estimates a flat 1000 tokens/image. |
 | Includes document(s) | 5 | Long context. **See the margin warning below.** |
+
+The same applies to packs, plans, the starter grant, expiry, and consumption order: one
+validated config object feeds the credit middleware, the dashboard, the checkout, and the
+pricing page, so a price exists in exactly one place. A number written twice is a number
+that will eventually disagree with itself.
 
 ### The margin warning (found while planning, not after launch)
 
@@ -79,6 +92,10 @@ the request is refused with a clear message rather than served at a loss. One nu
 enforceable where the estimate already exists, and it makes the flat 5-credit price
 honest by construction. Scaling credits with size and routing documents to a cheap
 long-context model are both viable later; neither is needed to launch.
+
+Because pricing is config, this stops being a matter of remembering: a **margin
+calculator** reads the config plus a measured cost-per-token and fails loudly on a
+negative-margin combination. Tuning a price cannot silently create a loss-making tier.
 
 Second cost factor, easy to miss: `llm.ts`'s ladder can make **two** provider calls
 (rung 2 carries exactly one repair retry). Our cost per fill varies; the customer's
@@ -99,9 +116,11 @@ double-spend under concurrent fills detectable rather than silent.
 Each phase is independently valuable — if work stops after any of them, what shipped
 still stands on its own.
 
-**P0 — Unblock (days).** Push the free-lane work to the public remote. Confirm the
-permanent hostname. Close the two Review cards. Nothing else can honestly start while
-four commits of hosted-lane code exist only on one laptop.
+**P0 — Unblock (days).** Push the free-lane work to the public remote, and make the
+widget's hosted endpoint a build-time value instead of a hardcoded host. Nothing else can
+honestly start while seven commits of hosted-lane code exist only on one laptop — and the
+endpoint constant currently names a domain that does not resolve, so every bare snippet
+fails at the network layer.
 
 **P1 — OSS credibility.** The README leads with `git clone` and "self-hosted server that
 holds your LLM credentials." That is the right doc for a self-hoster and the wrong first
@@ -113,16 +132,20 @@ Notable existing strength worth advertising: **the e2e suite mocks at the provid
 boundary**, so a contributor with no credentials at all can run the entire test suite.
 Most projects cannot say that.
 
-**P2 — Cloud foundation.** Private repo, data model, credit ledger, and the key-resolver
-seam. Ends with a backend that can charge a real account for a real fill, with no UI.
+**P2 — Cloud foundation.** Workspace scaffold, data model, pricing config, credit ledger,
+and the key-resolver seam. Ends with a backend that can charge a real account for a real
+fill, with no UI.
 
 **P3 — Console.** Design system first, then marketing + live demo, then auth, dashboard,
 and billing. Each is a shippable slice.
 
-**P4 — Production.** Deploy, shared counter store, provider-level spend cap, spend
-alerting. This is where the north star becomes literally true for a stranger.
+**P4 — Production.** Deploy to GCP behind the generated URL, shared counter store,
+provider-level spend cap, spend alerting, and the full stranger-to-paying-customer
+acceptance walk. This is where the product becomes real, minus its name.
 
-**P5 — Launch.** Pricing page, docs coexistence, announcement.
+**P5 — Domain cutover + launch.** Register the domain, rebuild the widget against it
+(a build flag, thanks to P0-2), republish, and announce. The hostname becomes permanent
+the moment the first snippet pins it.
 
 ## 5. How autonomous sessions run this
 
