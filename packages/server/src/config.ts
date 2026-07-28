@@ -84,6 +84,12 @@ export const GuardrailConfig = z.object({
   maxImageBytes: z.number().int().positive().default(DEFAULT_MAX_IMAGE_BYTES),
   maxBodyBytes: z.number().int().positive().default(DEFAULT_MAX_BODY_BYTES),
   requestTimeoutMs: z.number().int().positive().default(DEFAULT_REQUEST_TIMEOUT_MS),
+  // Optional per-request ceiling on ESTIMATED tokens (P2-0). maxBodyBytes bounds
+  // bytes, which says little about cost: a large PDF is a few megabytes but tens
+  // of thousands of tokens, so a flat per-fill price goes negative-margin on the
+  // tail. Checked before the provider call, so an over-large request costs
+  // nothing. Omitted → no ceiling, exactly today's behaviour for self-hosters.
+  maxRequestTokens: z.number().int().positive().optional(),
   rateLimit: z.number().int().positive().default(DEFAULT_RATE_LIMIT),
   rateWindowMs: z.number().int().positive().default(DEFAULT_RATE_WINDOW_MS),
   // Optional model allowlist — when set, only these model ids may be requested
@@ -185,6 +191,7 @@ export function loadConfig(): GuardrailConfig {
     maxImages: intFromEnv('FIELDFOX_MAX_IMAGES'),
     maxImageBytes: intFromEnv('FIELDFOX_MAX_IMAGE_BYTES'),
     maxBodyBytes: intFromEnv('FIELDFOX_MAX_BODY_BYTES'),
+    maxRequestTokens: intFromEnv('FIELDFOX_MAX_REQUEST_TOKENS'),
     requestTimeoutMs: intFromEnv('FIELDFOX_REQUEST_TIMEOUT_MS'),
     rateLimit: intFromEnv('FIELDFOX_RATE_LIMIT'),
     rateWindowMs: intFromEnv('FIELDFOX_RATE_WINDOW_MS'),

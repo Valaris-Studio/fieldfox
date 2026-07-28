@@ -88,8 +88,16 @@ function majorOf(version: number): number {
 // corrects this against actual usage.
 const CHARS_PER_TOKEN = 4;
 const TOKENS_PER_IMAGE = 1000;
-function estimateTokens(contextChars: number, imageCount: number): number {
-  return Math.ceil(contextChars / CHARS_PER_TOKEN) + imageCount * TOKENS_PER_IMAGE;
+
+// Documents are the expensive tail (P2-0): a PDF rides to the provider as a
+// base64 data URL and can be tens of thousands of tokens. Counting only text and
+// images would leave exactly the negative-margin case unbounded, so decoded
+// document bytes are estimated at the same chars-per-token rate as text. It is a
+// crude bound on an already-crude estimate, and deliberately errs high.
+function estimateTokens(contextChars: number, imageCount: number, documentChars = 0): number {
+  return (
+    Math.ceil((contextChars + documentChars) / CHARS_PER_TOKEN) + imageCount * TOKENS_PER_IMAGE
+  );
 }
 
 // The single guardrail middleware applied before the fill handler. Runs the
@@ -105,6 +113,7 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
     let body: {
       schemaVersion?: unknown;
       images?: Array<{ dataUrl?: unknown }>;
+      documents?: Array<{ dataUrl?: unknown }>;
       contextText?: unknown;
       formSchema?: { fields?: unknown[] };
       formId?: unknown;
@@ -306,11 +315,33 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
       }
     }
 
-    // 8. Charge the pre-call estimate against the daily budget. If THIS request
-    // crosses the ceiling the switch trips (and is honored on the NEXT request);
-    // we still serve this one, then reconcile with real usage post-call.
+    // 8. Estimate this request's tokens, enforce the optional per-request
+    // ceiling, then charge the estimate against the daily budget. If THIS
+    // request crosses the daily ceiling the switch trips (and is honored on the
+    // NEXT request); we still serve this one, then reconcile post-call.
     const contextChars = typeof body.contextText === 'string' ? body.contextText.length : 0;
-    const estimatedTokens = estimateTokens(contextChars, images.length);
+    const documents = Array.isArray(body.documents) ? body.documents : [];
+    const documentChars = documents.reduce(
+      (total: number, doc: { dataUrl?: unknown }) =>
+        total + decodedBytesOf(String(doc?.dataUrl ?? '').split(',')[1] ?? ''),
+      0,
+    );
+    const estimatedTokens = estimateTokens(contextChars, images.length, documentChars);
+
+    // The token ceiling is checked BEFORE the budget charge, not just before the
+    // provider call: a request we refuse must not consume the caller's daily
+    // budget, since it was never served.
+    if (config.maxRequestTokens !== undefined && estimatedTokens > config.maxRequestTokens) {
+      log({ event: 'refused', status: 413, siteKey, estimatedTokens, reason: 'request_too_large_for_model' });
+      return refuse(c, 413, {
+        error: 'request_too_large_for_model',
+        maxRequestTokens: config.maxRequestTokens,
+        estimatedTokens,
+        message:
+          'this request is too large to process — shorten the text or attach a smaller document',
+      });
+    }
+
     await store.chargeTokens(siteKey, estimatedTokens, policy.dailyTokenBudget);
 
     c.set('fieldfoxSiteKey', siteKey);

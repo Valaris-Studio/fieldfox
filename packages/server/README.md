@@ -35,6 +35,7 @@ token budget.
 | `FIELDFOX_MAX_IMAGES` | `4` | max images per request |
 | `FIELDFOX_MAX_IMAGE_BYTES` | `5242880` (5 MB) | max decoded bytes per image |
 | `FIELDFOX_MAX_BODY_BYTES` | `8388608` (8 MB) | max request body size |
+| `FIELDFOX_MAX_REQUEST_TOKENS` | _(unset — no ceiling)_ | max **estimated** tokens per request (text + images + document bytes); refuses `413 request_too_large_for_model` before the provider call |
 | `FIELDFOX_REQUEST_TIMEOUT_MS` | `30000` | per-request timeout budget |
 | `FIELDFOX_RATE_LIMIT` | `10` | requests per window, per key and per IP |
 | `FIELDFOX_RATE_WINDOW_MS` | `60000` | rate-limit window length |

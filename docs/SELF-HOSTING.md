@@ -102,10 +102,29 @@ Because the server scopes each key to an origin allowlist and a daily budget, th
 | `FIELDFOX_MAX_IMAGES` | `4` | Max images per request |
 | `FIELDFOX_MAX_IMAGE_BYTES` | `5242880` (5 MB) | Max decoded bytes per image |
 | `FIELDFOX_MAX_BODY_BYTES` | `8388608` (8 MB) | Max request body size |
+| `FIELDFOX_MAX_REQUEST_TOKENS` | _(unset — no ceiling)_ | Max **estimated** tokens per request. See below. |
 | `FIELDFOX_REQUEST_TIMEOUT_MS` | `30000` | Per-request timeout budget |
 | `FIELDFOX_RATE_LIMIT` | `10` | Requests per window, per key **and** per IP |
 | `FIELDFOX_RATE_WINDOW_MS` | `60000` | Rate-limit window length |
 | `FIELDFOX_MODEL_ALLOWLIST` | _(unset)_ | Comma-separated allowed model ids |
+
+#### Bounding cost, not just size: `FIELDFOX_MAX_REQUEST_TOKENS`
+
+`FIELDFOX_MAX_BODY_BYTES` bounds **bytes**, which says surprisingly little about what a request costs you. A 3 MB PDF is comfortably inside an 8 MB body cap but is roughly **750,000 estimated tokens** — on a good model that is real money for a single fill.
+
+Set `FIELDFOX_MAX_REQUEST_TOKENS` to bound the estimate instead:
+
+```sh
+FIELDFOX_MAX_REQUEST_TOKENS=30000
+```
+
+- Checked **before the provider call**, so an over-large request costs you nothing.
+- Also checked before the daily-budget charge, so a refused request does not consume the caller's budget.
+- Counts context text, images (a flat ~1000 tokens each), and **decoded document bytes** — documents are the expensive tail this exists for.
+- Refuses with `413 request_too_large_for_model`, carrying `maxRequestTokens` and `estimatedTokens`. It deliberately carries **no `retry-after`**: waiting does not make the payload smaller, so the remedy is to send less.
+- **Unset by default**, which means no ceiling and exactly the behaviour earlier versions had.
+
+The estimate is deliberately crude (~4 characters per token) and errs high. It is a cost bound, not a billing figure.
 
 ### LLM provider (required)
 
