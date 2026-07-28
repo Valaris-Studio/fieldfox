@@ -28,16 +28,35 @@ Two rules that override your instincts:
 
 ## 1. Pick ONE card
 
-`mcp__valaris__list_cards`. Prefer, in order:
+`mcp__valaris__list_cards`. Consider ONLY cards labelled **`autonomous`**. Prefer, in order:
 1. Anything already in **In Progress** (finish what a previous iteration started).
 2. Anything in **Review** that is mechanical-DoD and whose gates pass → verify and close it.
 3. The highest-priority **Backlog** card whose dependencies are all Done
    (`dependency_status: "ready"`).
 
 Skip cards labelled `needs-sebastian` — those are his judgment calls, not yours.
+Skip cards labelled `superseded` — they are history, kept for the record only.
 Skip cards whose dependencies are unmet.
 
 Move the chosen card to **In Progress** before you start writing code.
+
+## 1b. WHICH REPO — read this before touching a file
+
+There are now TWO repositories:
+
+- `~/Programming/valaris/fieldfox` — **public, MIT**: widget, server, shared, examples, docs.
+- `~/Programming/valaris/fieldfox-cloud` — **private**: packages/cloud, apps/console, billing.
+
+Every card names its repo on the first line (`**Repo:**`). Work in that repo and only
+that repo. If a card seems to need changes in both, it is two cards — stop and say so.
+
+The boundary rule (docs/ROADMAP.md §2): the public repo must stay fully functional
+standalone and must never gain billing, Stripe, account, or console code. The private
+repo consumes `@fieldfox/server` from npm; if it needs a new seam, that seam ships in
+the OSS package first, as its own card, justified on its own merits for self-hosters.
+
+**Never** commit credentials to either repo. Never add the private repo as a remote of
+the public one.
 
 ## 2. Land it
 
@@ -119,10 +138,11 @@ from step 0, so leave nothing in flight and carry no state in your head.
 
 ## Notes on running it
 
-- **First iteration** will pick up `CLOUD-0` (free-tier identity + limits) — the approach
-  is settled, so it is implementation work, not design.
-- **`needs-sebastian` cards** currently: `CLOUD-4` (pricing). The loop will route around
-  it and stop if it becomes the only thing left.
-- **`CLOUD-5`** (production deployment) will hard-block on hosting and credentials —
-  expect the loop to stop there and hand back to you.
-- The loop commits to `main` per card, matching how this project has been run so far.
+- The board was replanned 2026-07-27 against **docs/ROADMAP.md**. Cards are `P<phase>-<n>`
+  and carry the `autonomous` label when a loop session can land them unaided.
+- **First iteration** picks up `P0-1` (push the free-lane work). Almost everything else
+  depends on it, since the public repo is behind the local `main`.
+- **`needs-sebastian` cards**: `P0-2` (hostname), `P2-6` (pricing), `P4-1` (deploy),
+  `P5-1` (launch). The loop routes around them and stops if one is all that remains.
+- **`P4-1`** hard-blocks on hosting and credentials — expect the loop to stop there.
+- The loop commits to `main` per card in whichever repo the card names.
