@@ -14,9 +14,11 @@ import { CANNED } from './canned.mjs';
 const ZERO_CONFIG_URL = 'http://localhost:8080/examples/plain-html/zero-config.html';
 const SERVER_PORT = Number(process.env.FIELDFOX_E2E_SERVER_PORT ?? 8794);
 
-// Mirrors HOSTED_FILL_ENDPOINT in packages/widget/src/element.ts. Hard-coded
-// because specs transpile as CJS and cannot import the workspace package; the
-// first assertion below fails loudly if the shipped constant ever moves.
+// Mirrors the DEFAULT build's HOSTED_FILL_ENDPOINT (P0-2: the value is injected
+// from FIELDFOX_HOSTED_ENDPOINT at build time, so a bundle built with that
+// variable set will not match this — e2e builds the default). Hard-coded because
+// specs transpile as CJS and cannot import the workspace package; the first
+// assertion below fails loudly if the shipped default ever moves.
 const HOSTED_FILL_ENDPOINT = 'https://api.fieldfox.dev/api/fill';
 
 // Headers the bare snippet actually put on the wire, captured by the route

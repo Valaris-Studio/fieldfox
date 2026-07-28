@@ -5,6 +5,12 @@
 // plus the sha384 SRI hash of the IIFE bundle so the CDN can't serve tampered
 // bytes. Run after `pnpm build`; the hash is only valid for the bytes you
 // actually publish.
+//
+// The hosted endpoint compiled into the bundle comes from the build, not from
+// here — to cut over to a new host, rebuild with it set and republish:
+//   FIELDFOX_HOSTED_ENDPOINT="https://<host>/api/fill" pnpm build
+// The endpoint actually baked into the bundle is echoed below so a release can
+// never silently ship the wrong host (docs/SELF-HOSTING.md).
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -24,6 +30,16 @@ try {
 
 const { version } = JSON.parse(readFileSync(join(widgetDir, 'package.json'), 'utf8'));
 const integrity = `sha384-${createHash('sha384').update(bundle).digest('base64')}`;
+
+// Read the compiled-in hosted default back OUT of the bundle rather than
+// re-deriving it from the environment: this reflects the bytes being published,
+// so a stale `dist/` from an earlier build is visible instead of assumed.
+const hostedEndpoint = bundle.toString('utf8').match(/https:\/\/[^"']*\/api\/fill/)?.[0];
+console.error(
+  hostedEndpoint
+    ? `Bundle hosted default: ${hostedEndpoint}`
+    : 'WARNING: no hosted default found in the bundle — rebuild before publishing.',
+);
 
 console.log(`<!-- Fieldfox widget v${version} — pinned exact version + SRI -->`);
 console.log(

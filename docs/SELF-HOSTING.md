@@ -154,6 +154,27 @@ Every rung re-validates the result against the shared contract, because compatib
 
 The default `InMemoryStore` is **single-instance**. Its counters, budgets, and kill-switch state do not propagate across instances or survive a restart. For a multi-instance deploy, supply a shared `RateBudgetStore` adapter (Redis, a KV store) implementing the same interface, via `createApp({ store })`.
 
+## Building a widget bundle for your own host
+
+Most self-hosters never need this: point the embed at your server with the `endpoint` attribute and use the published CDN bundle unchanged.
+
+```html
+<field-fox target="#my-form" endpoint="https://fieldfox.example.com/api/fill"></field-fox>
+```
+
+Build your own bundle only when you want `endpoint` to be **optional** for your embedders — the bare `<field-fox target="#my-form">` snippet, with your host as the compiled-in default:
+
+```bash
+FIELDFOX_HOSTED_ENDPOINT="https://fieldfox.example.com/api/fill" pnpm --filter @fieldfox/widget build
+```
+
+The value is inlined by the bundler as a compile-time constant, so there is no discovery request before the first fill. Notes:
+
+- It must be an absolute **https** URL, including the `/api/fill` path. A malformed or non-https value **fails the build** rather than shipping a bundle that points nowhere.
+- Unset, it defaults to the hosted service's endpoint — this is what the published packages contain.
+- The `endpoint` attribute always wins over the compiled default, so one bundle still serves embedders that point elsewhere.
+- The baked-in URL is pinned into every snippet built from that bundle; changing it later means rebuilding and republishing, and any snippet still loading the old file keeps the old host.
+
 ## Version skew and upgrades
 
 The current wire contract is `schemaVersion = 4`. The server serves a **set** of major versions — `{1, 2, 3, 4}` — so a CDN-pinned widget on an older major keeps working during a migration window. A request whose major is not in the served set is refused with:

@@ -31,10 +31,15 @@ export const ELEMENT_NAME = 'field-fox';
 // A compile-time constant, never a runtime lookup: no discovery round-trip
 // before the first fill, and no eager weight beyond the string itself.
 //
+// Injected at build time from FIELDFOX_HOSTED_ENDPOINT (see vite.config.ts),
+// because we deploy behind a provider-generated URL and cut a domain over later
+// (P0-2) — the hostname is a build flag, not a source edit. It is still resolved
+// at COMPILE time; only where the string comes from changed.
+//
 // NOTE: this hostname is baked into every CDN-pinned snippet in the wild, so
 // changing it later strands them. It is deliberately the ONLY place the hosted
-// host appears (CLOUD-5 owns standing the deployment up behind it).
-export const HOSTED_FILL_ENDPOINT = 'https://api.fieldfox.dev/api/fill';
+// host appears (P4-1 owns standing the deployment up behind it).
+export const HOSTED_FILL_ENDPOINT = __HOSTED_FILL_ENDPOINT__;
 
 // Wire schemaVersion sent in every FillRequest. Mirrors `SCHEMA_VERSION` in
 // @fieldfox/shared (a drift-guard test pins it there), but declared LOCALLY as a
