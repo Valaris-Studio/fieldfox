@@ -6,6 +6,14 @@ export { app, createApp, type AppOptions } from './app.js';
 export type { SiteKeyResolver } from './guardrails.js';
 export type { SiteKeyPolicy, GuardrailConfig } from './config.js';
 
+// Operational-counter stores. InMemoryStore is the single-instance default;
+// SharedKvStore backs a multi-instance deploy with any KV offering an atomic
+// increment (Redis/Valkey INCRBY, Cloudflare KV + Durable Object, Upstash).
+// AtomicKv is deliberately four small operations rather than a client type, so
+// the package keeps zero required runtime dependencies.
+export { InMemoryStore, SharedKvStore } from './store.js';
+export type { RateBudgetStore, AtomicKv, RateHit, BudgetState, AllowanceState } from './store.js';
+
 // The app is a standard Hono instance; a Node/edge server adapter mounts
 // `app.fetch`. The concrete Node listener (and its @hono/node-server dependency)
 // lands with the config/deploy card — keeping index.ts side-effect-free means

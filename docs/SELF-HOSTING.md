@@ -199,7 +199,43 @@ Every rung re-validates the result against the shared contract, because compatib
 - **Rate limit** — `FIELDFOX_RATE_LIMIT` requests per `FIELDFOX_RATE_WINDOW_MS`, enforced **per site key and per client IP** independently. Exceeding either returns `429 rate_limited` with a `Retry-After` header.
 - **Daily token budget** — each key's `dailyTokenBudget` is a hard per-day ceiling. The server charges a pre-call estimate and reconciles it against actual usage after the provider answers. When a request crosses the ceiling, a **kill switch** trips: that request is still served, but subsequent requests for the key are refused with `429 daily_budget_exceeded` until the window resets.
 
-The default `InMemoryStore` is **single-instance**. Its counters, budgets, and kill-switch state do not propagate across instances or survive a restart. For a multi-instance deploy, supply a shared `RateBudgetStore` adapter (Redis, a KV store) implementing the same interface, via `createApp({ store })`.
+The default `InMemoryStore` is **single-instance**. Its counters, budgets, and kill-switch state live in one process, so they do not propagate across instances or survive a restart.
+
+> **If you run more than one instance, you must supply a shared store.** Rate limits and the daily allowance under-count — each instance sees only its own share of traffic — and, far worse, **a kill switch tripped on one instance does not stop the others.** The instance that hit its budget stops spending; its siblings keep calling your provider. Two instances behind a load balancer is enough for this to bite.
+
+`SharedKvStore` ships in the package for exactly this. It takes any KV with an **atomic increment** — Redis or Valkey (`INCRBY`), Cloudflare KV behind a Durable Object, Upstash — and it is not a required dependency: you supply the client, the package supplies the logic.
+
+```ts
+import { createApp, SharedKvStore, type AtomicKv } from '@fieldfox/server';
+import { createClient } from 'redis'; // your client, your dependency
+
+const redis = createClient({ url: process.env.REDIS_URL });
+await redis.connect();
+
+const kv: AtomicKv = {
+  incrBy: (key, amount) => redis.incrBy(key, amount),
+  get: async (key) => {
+    const raw = await redis.get(key);
+    return raw === null ? undefined : Number(raw);
+  },
+  // Must only ever RAISE the value — the kill switch latches, and two instances
+  // racing must never clear a flag the other set.
+  setIfGreater: async (key, value) => {
+    const current = Number((await redis.get(key)) ?? 0);
+    if (value > current) await redis.set(key, String(value));
+    return Math.max(current, value);
+  },
+  expire: async (key, ttlMs) => {
+    await redis.pExpire(key, ttlMs);
+  },
+};
+
+const app = createApp({ store: new SharedKvStore(kv) });
+```
+
+**`incrBy` must be genuinely atomic.** This is the entire contract, and getting it wrong fails silently in the worst direction. A read-modify-write assembled from separate `get` and `set` calls loses updates: fire 50 concurrent requests and every one reads `0`, writes `1`, and believes it is the first — so every one passes a rate limit of `1`. That is unbounded spend, not a rounding error. Redis `INCRBY` is atomic; a hand-rolled `get`-then-`set` is not.
+
+Both stores are covered by one shared conformance suite (`test/store-conformance.test.ts`), so they cannot drift apart in behaviour: window resets, integer-day rollover, the latching kill switch, and the allowance's strictly-above-the-line exhaustion all assert identically against each. Keys are period-scoped (`ff:rate:<key>:<window>`, `ff:budget:<key>:<day>`) and TTL'd, so rollover needs no scheduled cleanup.
 
 ## Building a widget bundle for your own host
 
