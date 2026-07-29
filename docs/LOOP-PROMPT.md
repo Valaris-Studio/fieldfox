@@ -140,9 +140,31 @@ from step 0, so leave nothing in flight and carry no state in your head.
 
 - The board was replanned 2026-07-27 against **docs/ROADMAP.md**. Cards are `P<phase>-<n>`
   and carry the `autonomous` label when a loop session can land them unaided.
-- **First iteration** picks up `P0-1` (push the free-lane work). Almost everything else
-  depends on it, since the public repo is behind the local `main`.
-- **`needs-sebastian` cards**: `P0-2` (hostname), `P2-6` (pricing), `P4-1` (deploy),
-  `P5-1` (launch). The loop routes around them and stops if one is all that remains.
+- **`needs-sebastian` cards**: `P4-1` (deploy), `P5-1` (launch), `P2-6b` (pricing levers).
+  The loop routes around them and stops if one is all that remains.
 - **`P4-1`** hard-blocks on hosting and credentials — expect the loop to stop there.
 - The loop commits to `main` per card in whichever repo the card names.
+
+### State as of 2026-07-29 (phase 2 complete)
+
+59 Done · 16 Backlog. Phase 2 (cloud foundations) is finished:
+
+- `@fieldfox/server@0.2.0` on npm — composable by a deployment that owns its key
+  lookup (`resolveSiteKey` needs no env key map; `resolveConfig` is exported).
+- `fieldfox-cloud` has `packages/cloud` (composes the OSS app), `packages/db`
+  (accounts, sites, hashed keys, append-only credit ledger, metadata-only usage
+  events), and `packages/pricing` (config + consumption order + margin calculator).
+- Next actionable card is **P2-4** (credit reservation middleware) — where the
+  ledger, the pricing config, and the site-key resolver finally meet. Then P3-*.
+
+### Two hard-won gotchas
+
+- **Publishing needs Sebastian at a real terminal** (2FA has no TTY in an agent
+  shell). A `404 on PUT` from npm means an EXPIRED TOKEN, not a missing package —
+  run `npm whoami` first. After a publish, the consuming repo hits
+  `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`; fix with
+  `pnpm clean --lockfile && pnpm install` (NOT an `.npmrc` edit).
+- **Never commit a lockfile resolved against a local `file:` tarball** — it embeds
+  an absolute `/private/tmp` path. Verify with a packed tarball, then revert the
+  lockfile and leave the consumer's changes uncommitted until the real version is
+  on the registry.
