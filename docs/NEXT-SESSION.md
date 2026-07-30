@@ -57,19 +57,22 @@ Everything below was true at hand-off. Confirm each before relying on it; a boar
   + `app/ui/primitives.tsx` are the LOCKED visual language. Later console cards EXTEND
   `primitives.tsx` and register new primitives in `/styleguide`; they never redefine tokens
   and never fork a primitive. This unblocked P3-2 and transitively the console lane.
-- **P2-6b pricing lever DECIDED**: size-scaled credits. Implementation is the new card
-  **P2-6c**, which now gates P3-5 and P3-6. Read the P2-6b note in full before touching
-  pricing — it records one question Sebastian has NOT answered (below).
+- **P2-6b DECIDED AND CLOSED**: size-scaled credits, **per-request floor 9 credits**,
+  **`starterGrantCredits` 100 -> 500**. Implementation is the new card **P2-6c**, which now
+  gates P3-5 and P3-6 and is FULLY SPECIFIED — mechanism and both numbers. Read the two
+  P2-6b notes before touching pricing.
 - **gcloud AUTHENTICATED**, so **P4-1** is relabelled `autonomous` and provisioning is
   unblocked.
 
 **Still needs Sebastian — do not invent answers to these:**
-- The per-request **credit floor** value for P2-6c. Size-scaling alone cannot lift text on
-  the good model (2.3x underwater with no size tail to scale). Implement the floor as a
-  config value; leave the NUMBER to him. Do not pick a number that makes the margin test
-  go green — that defeats the calculator's entire purpose.
 - **Production LLM credentials** and a **provider-level spend cap** for P4-1. These gate
   GOING LIVE, not provisioning.
+
+**The one pricing coupling to respect:** the 9-credit floor and the 500-credit starter grant
+are NOT independent knobs. A 9-credit floor makes the smallest fill cost 9x the old flat
+text weight, so the old 100-credit grant would have bought only ~11 trial fills — and the
+grant is the surface where a customer calibrates their real cost before paying. If a card
+changes either number, it must reconsider the other.
 
 ## 3. Suggested scope, in this order
 
@@ -87,8 +90,8 @@ Move each to In Progress before writing code.
    with the DEV gateway creds to prove the shape. Then park it in **Review** with the
    deployed URL and state exactly which two Sebastian items remain. Do NOT mark it Done
    and do NOT point the public snippet at it.
-3. **P2-6c (size-scaled credits)** — `fieldfox-cloud`, if the floor is answered by then.
-   Otherwise build the mechanism with the floor as config and leave the value unset.
+3. **P2-6c (size-scaled credits)** — `fieldfox-cloud`. Fully specified: floor 9, starter
+   grant 500, both as config values. Nothing outstanding on it.
 
 If P3-2 alone consumes the session, that is a fine outcome. Stop and report.
 
