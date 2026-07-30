@@ -23,7 +23,26 @@ declare module 'hono' {
     // any. The fill handler passes it to the provider call in place of the
     // default model.
     fieldfoxModelOverride: string;
+    // What kinds of input this request actually carried. Read by a composing
+    // layer that prices or attributes a fill by input kind (see fillMiddleware).
+    fieldfoxInputKinds: readonly RequestInputKind[];
   }
+}
+
+// The kinds of input a fill request can carry. Attachments cost far more than
+// text to process, so a layer doing its own cost accounting needs to know which
+// were present — not just the total token estimate.
+export type RequestInputKind = 'text' | 'image' | 'document';
+
+// Reports only what the request actually carried: no default kind, and never a
+// kind that was absent. A caller pricing by the highest kind present would
+// otherwise charge an attachment rate for a plain text fill.
+function inputKindsOf(contextChars: number, imageCount: number, documentCount: number): RequestInputKind[] {
+  const kinds: RequestInputKind[] = [];
+  if (contextChars > 0) kinds.push('text');
+  if (imageCount > 0) kinds.push('image');
+  if (documentCount > 0) kinds.push('document');
+  return kinds;
 }
 
 // Resolves a presented site key to its policy, or undefined if the key is not
@@ -396,6 +415,10 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
     c.set('fieldfoxSiteKey', siteKey);
     c.set('fieldfoxPolicy', policy);
     c.set('fieldfoxEstimatedTokens', estimatedTokens);
+    // Derived from the SAME parsed values the token estimate above used, so a
+    // layer pricing the request and the guardrail that sized it can never
+    // disagree about what the request carried.
+    c.set('fieldfoxInputKinds', inputKindsOf(contextChars, images.length, documents.length));
 
     // Resolve the model for this call. The free lane pins the cheapest model;
     // an explicit per-formId policy still wins, since that is a deliberate

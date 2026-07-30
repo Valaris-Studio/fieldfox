@@ -3,8 +3,15 @@ export { app, createApp, type AppOptions } from './app.js';
 // The injection seams a composing deployment needs to type its own call:
 // a site-key resolver backed by its own store, and the policy shape that
 // resolver must return.
-export type { SiteKeyResolver } from './guardrails.js';
+export type { SiteKeyResolver, RequestInputKind } from './guardrails.js';
 export type { SiteKeyPolicy, GuardrailConfig } from './config.js';
+
+// The site key the free lane attributes its requests to (it has no real key, so
+// the guardrails charge this sentinel instead). A deployment that meters must be
+// able to recognise the unmetered lane, and the leading '@' keeps it outside the
+// ffx_pk_ prefix so it can never collide with a customer key. Exported because
+// re-declaring the literal downstream would eventually disagree with this one.
+export { FREE_TIER_BUDGET_KEY } from './config.js';
 
 // The sanctioned way to BUILD a GuardrailConfig. Exported because the type alone
 // is a trap: it has eight defaulted fields that only exist after this zod parse,

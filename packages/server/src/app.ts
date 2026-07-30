@@ -1,4 +1,4 @@
-import { Hono, type Context } from 'hono';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { createFillHandler } from './fill.js';
 import type { ChatCompletion } from './llm.js';
 import { loadConfig, type GuardrailConfig } from './config.js';
@@ -43,6 +43,23 @@ export interface AppOptions {
   // effect without a redeploy. Omitted → the static map is the sole authority.
   resolveSiteKey?: SiteKeyResolver;
   logger?: MetaLogger;
+  // Middleware for requests the guardrails ACCEPTED, run before the provider
+  // call: own-quota enforcement, audit logging, cost attribution. It sees the
+  // guardrail verdict (fieldfoxSiteKey/Policy/EstimatedTokens/InputKinds) and may
+  // short-circuit with its own response, in which case no provider call happens.
+  //
+  // This is an option rather than something a composing deployment bolts on
+  // afterwards, because neither way of bolting it on is correct: a `use()`
+  // registered after the POST handler NEVER RUNS (the handler ends the chain,
+  // silently — no error), and wrapping this app from a parent runs before the
+  // guardrails, too early to know whether the request was even accepted. Code
+  // that must not act on a refused request has no other correct home.
+  fillMiddleware?: MiddlewareHandler | MiddlewareHandler[];
+}
+
+function toMiddlewareList(provided: AppOptions['fillMiddleware']): MiddlewareHandler[] {
+  if (!provided) return [];
+  return Array.isArray(provided) ? provided : [provided];
 }
 
 // Config load is deferred to the first guarded request so importing `app`
@@ -79,6 +96,12 @@ export function createApp(options: AppOptions = {}): Hono {
       logger: options.logger,
     })(c, next),
   );
+  // Registered between the guardrails and the handler: the ONLY position that is
+  // both past the refusal ladder and before the provider call. Must stay here —
+  // moving it below app.post would stop it running entirely.
+  for (const middleware of toMiddlewareList(options.fillMiddleware)) {
+    app.use('/api/fill', middleware);
+  }
   app.post('/api/fill', createFillHandler(options.llmCaller, store, options.logger));
 
   return app;
