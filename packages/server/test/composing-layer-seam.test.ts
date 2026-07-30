@@ -287,7 +287,9 @@ describe('the request’s input kinds are exposed, not re-derived', () => {
     const { app, seen } = appWithHook();
 
     await post(app, {
-      body: validRequest({ documents: [{ dataUrl: PDF_DATA_URL, name: 'w2.pdf' }] } as Partial<FillRequest>),
+      body: validRequest({
+        documents: [{ dataUrl: PDF_DATA_URL, name: 'w2.pdf', mediaType: 'application/pdf' }],
+      } as Partial<FillRequest>),
     });
 
     expect([...(seen.inputKinds ?? [])].sort()).toEqual(['document', 'text']);
