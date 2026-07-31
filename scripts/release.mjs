@@ -55,6 +55,30 @@ export function unpublishableSpecsIn(manifest) {
   return offenders;
 }
 
+// What to hand `npm install` when smoke-testing one tarball. A COORDINATED
+// release (widget 0.2.0 depending on shared 0.2.0, both unpublished) cannot be
+// verified one tarball at a time: the sibling version exists only as another
+// tarball, so the registry lookup fails and the gate rejects a correct release.
+// `pnpm -r publish` resolves that ordering itself, so the gate was wrong, not
+// the release.
+//
+// Only packages IN THIS RELEASE are substituted. A third-party dependency, or a
+// @fieldfox package we are not publishing, still resolves from the registry
+// exactly as a consumer's install would — otherwise this check would start
+// hiding the missing-dependency failures it exists to catch.
+export function installArgsFor(manifest, tarballPath, tarballsByName) {
+  const siblings = [];
+  for (const field of DEPENDENCY_FIELDS) {
+    for (const name of Object.keys(manifest[field] ?? {})) {
+      const sibling = tarballsByName[name];
+      if (sibling && sibling !== tarballPath && !siblings.includes(sibling)) siblings.push(sibling);
+    }
+  }
+  // Under test first: npm treats the first argument as the thing being added,
+  // and the diagnosis should name the package we are actually verifying.
+  return [tarballPath, ...siblings];
+}
+
 function run(command, args, options = {}) {
   return execFileSync(command, args, { encoding: 'utf8', stdio: 'pipe', ...options });
 }
@@ -74,14 +98,14 @@ function manifestFromTarball(tarballPath) {
 // Proves the tarball is installable by a stranger: a scratch project with no
 // workspace, no pnpm linking, and no access to this repo's node_modules.
 // `npm install` here is what actually rejects an unrewritten workspace: spec.
-function assertInstallable(tarballPath, packageName) {
+function assertInstallable(tarballPath, packageName, installArgs = [tarballPath]) {
   const scratch = mkdtempSync(join(tmpdir(), 'ff-release-'));
   try {
     writeFileSync(
       join(scratch, 'package.json'),
       JSON.stringify({ name: 'release-smoke', private: true, type: 'module' }),
     );
-    run('npm', ['install', '--no-audit', '--no-fund', tarballPath], { cwd: scratch });
+    run('npm', ['install', '--no-audit', '--no-fund', ...installArgs], { cwd: scratch });
     // RESOLVE the entry rather than executing it: a broken "exports" map or a
     // missing dist file ships just as silently as a bad dependency spec, but the
     // widget is a browser component whose module scope touches HTMLElement, so
@@ -89,9 +113,20 @@ function assertInstallable(tarballPath, packageName) {
     // ever hit (they load it in a bundler or a browser).
     // import.meta.resolve (not require.resolve) because these packages publish an
     // ESM-only "exports" map, which the CJS resolver cannot traverse.
+    //
+    // Then STAT the result: import.meta.resolve walks the exports map and returns
+    // a path string without checking anything is there, so a package whose entry
+    // points at a dist file that was never built resolved happily and passed this
+    // gate. Measured 2026-07-31 — resolving succeeded on a deliberately missing
+    // target. The existence check is what makes the claim in this comment true.
     writeFileSync(
       join(scratch, 'resolve-check.mjs'),
-      `import.meta.resolve(${JSON.stringify(packageName)});\n`,
+      `import { existsSync } from 'node:fs';\n` +
+        `import { fileURLToPath } from 'node:url';\n` +
+        `const entry = import.meta.resolve(${JSON.stringify(packageName)});\n` +
+        `if (!existsSync(fileURLToPath(entry))) {\n` +
+        `  throw new Error('exports map resolves to a file that was not published: ' + entry);\n` +
+        `}\n`,
     );
     run('node', ['resolve-check.mjs'], { cwd: scratch });
   } catch (error) {
@@ -133,15 +168,27 @@ function main() {
   console.log('Building…');
   run('pnpm', ['build'], { cwd: repoRoot, stdio: 'inherit' });
 
-  for (const packageName of PUBLISHED_PACKAGES) {
-    console.log(`\nChecking ${packageName}…`);
-    const packageDir = packageDirectoryOf(packageName);
-    const destination = mkdtempSync(join(tmpdir(), 'ff-pack-'));
+  // Pack EVERY package before verifying any of them: a coordinated release means
+  // one tarball's dependency is another tarball, so the whole set has to exist
+  // before the first install can resolve.
+  const destination = mkdtempSync(join(tmpdir(), 'ff-pack-'));
+  const tarballsByName = {};
+  const manifestsByName = {};
 
-    try {
-      run('pnpm', ['pack', '--pack-destination', destination], { cwd: packageDir });
-      const tarballPath = packageTarballIn(destination);
-      const manifest = manifestFromTarball(tarballPath);
+  try {
+    for (const packageName of PUBLISHED_PACKAGES) {
+      const packDestination = mkdtempSync(join(destination, `${packageName.replace(/\W/g, '-')}-`));
+      run('pnpm', ['pack', '--pack-destination', packDestination], {
+        cwd: packageDirectoryOf(packageName),
+      });
+      tarballsByName[packageName] = packageTarballIn(packDestination);
+      manifestsByName[packageName] = manifestFromTarball(tarballsByName[packageName]);
+    }
+
+    for (const packageName of PUBLISHED_PACKAGES) {
+      console.log(`\nChecking ${packageName}…`);
+      const tarballPath = tarballsByName[packageName];
+      const manifest = manifestsByName[packageName];
 
       const offenders = unpublishableSpecsIn(manifest);
       if (offenders.length > 0) {
@@ -154,11 +201,11 @@ function main() {
       }
       console.log(`  no unpublishable specs (${manifest.version})`);
 
-      assertInstallable(tarballPath, packageName);
+      assertInstallable(tarballPath, packageName, installArgsFor(manifest, tarballPath, tarballsByName));
       console.log('  installs from the tarball and its entry resolves');
-    } finally {
-      rmSync(destination, { recursive: true, force: true });
     }
+  } finally {
+    rmSync(destination, { recursive: true, force: true });
   }
 
   if (dryRun) {

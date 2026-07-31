@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
 // @ts-expect-error - repo-level release tooling, plain ESM with no type declarations
-import { unpublishableSpecsIn, PUBLISHED_PACKAGES } from '../../../scripts/release.mjs';
+import { unpublishableSpecsIn, installArgsFor, PUBLISHED_PACKAGES } from '../../../scripts/release.mjs';
 
 // P1-3: 0.1.0 shipped uninstallable because `npm publish` from a package
 // directory left `"@fieldfox/shared": "workspace:*"` in the published manifest,
@@ -136,3 +137,85 @@ test('pnpm pack rewrites workspace: specs but npm pack does not — the differen
   expect(readDeps('npm')['@fieldfox/shared']).toBe('workspace:*');
   expect(readDeps('pnpm')['@fieldfox/shared']).not.toMatch(/^workspace:/);
 }, 180_000);
+
+// A COORDINATED release (widget 0.2.0 + shared 0.2.0 together) broke the gate on
+// 2026-07-31: assertInstallable installed each tarball in isolation, so the
+// widget's dependency on shared@0.2.0 could not resolve — that version existed
+// only as a sibling tarball, not on the registry. The gate failed a release that
+// was in fact correct, and `pnpm -r publish` would have handled the ordering.
+//
+// The fix must not weaken what the gate catches: an unpublishable spec, a broken
+// exports map, or a genuinely missing dependency all still have to fail. So the
+// smoke install now offers the sibling tarballs ALONGSIDE the one under test.
+
+test('a sibling being released is offered to the smoke install, so it can resolve', () => {
+  const tarballs = {
+    '@fieldfox/shared': '/tmp/pack/fieldfox-shared-0.2.0.tgz',
+    '@fieldfox/widget': '/tmp/pack/fieldfox-widget-0.2.0.tgz',
+  };
+  const manifest = { name: '@fieldfox/widget', dependencies: { '@fieldfox/shared': '0.2.0' } };
+
+  expect(installArgsFor(manifest, tarballs['@fieldfox/widget'], tarballs)).toEqual([
+    '/tmp/pack/fieldfox-widget-0.2.0.tgz',
+    '/tmp/pack/fieldfox-shared-0.2.0.tgz',
+  ]);
+});
+
+test('the package under test comes FIRST, so npm installs the thing being verified', () => {
+  const tarballs = {
+    '@fieldfox/shared': '/tmp/pack/fieldfox-shared-0.2.0.tgz',
+    '@fieldfox/widget': '/tmp/pack/fieldfox-widget-0.2.0.tgz',
+  };
+  const manifest = { name: '@fieldfox/widget', dependencies: { '@fieldfox/shared': '0.2.0' } };
+
+  expect(installArgsFor(manifest, tarballs['@fieldfox/widget'], tarballs)[0]).toBe(
+    '/tmp/pack/fieldfox-widget-0.2.0.tgz',
+  );
+});
+
+test('a package with no sibling dependency installs alone, exactly as before', () => {
+  // shared depends on nothing we publish, so nothing extra may be dragged in —
+  // a wider install would mask a package that cannot actually stand on its own.
+  const tarballs = { '@fieldfox/shared': '/tmp/pack/fieldfox-shared-0.2.0.tgz' };
+  const manifest = { name: '@fieldfox/shared', dependencies: { zod: '^3' } };
+
+  expect(installArgsFor(manifest, tarballs['@fieldfox/shared'], tarballs)).toEqual([
+    '/tmp/pack/fieldfox-shared-0.2.0.tgz',
+  ]);
+});
+
+test('a third-party dependency is NEVER swapped for a local tarball', () => {
+  // Only packages in this release are substituted. Anything else must resolve
+  // from the registry the way a consumer's install would.
+  const tarballs = { '@fieldfox/shared': '/tmp/pack/fieldfox-shared-0.2.0.tgz' };
+  const manifest = { name: '@fieldfox/server', dependencies: { hono: '^4', zod: '^3' } };
+
+  expect(installArgsFor(manifest, '/tmp/pack/fieldfox-server-0.4.1.tgz', tarballs)).toEqual([
+    '/tmp/pack/fieldfox-server-0.4.1.tgz',
+  ]);
+});
+
+test('a sibling that is NOT part of this release is not fabricated', () => {
+  // If widget depended on a fieldfox package we are not publishing, that is a
+  // real problem and the install must still hit the registry and fail there.
+  const manifest = { name: '@fieldfox/widget', dependencies: { '@fieldfox/shared': '0.2.0' } };
+
+  expect(installArgsFor(manifest, '/tmp/pack/fieldfox-widget-0.2.0.tgz', {})).toEqual([
+    '/tmp/pack/fieldfox-widget-0.2.0.tgz',
+  ]);
+});
+
+test('resolving an entry is not the same as the entry EXISTING', () => {
+  // Found 2026-07-31 while fixing the coordinated-release gap, and it predates
+  // that change: import.meta.resolve() walks the exports map and returns a path
+  // string WITHOUT checking the file is there. A package whose exports point at
+  // a dist file that was never built resolved cleanly and passed the gate, which
+  // is precisely the "ships just as silently as a bad dependency spec" failure
+  // the check was written to prevent.
+  //
+  // Pinned as a documented property of Node rather than as our behaviour, so the
+  // reason the release script stats the resolved path stays legible.
+  const resolved = new URL('./does-not-exist.mjs', import.meta.url);
+
+  expect(existsSync(fileURLToPath(resolved))).toBe(false);
+});
