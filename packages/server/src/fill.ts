@@ -193,6 +193,11 @@ export function createFillHandler(
       const siteKey = c.get('fieldfoxSiteKey');
       const policy = c.get('fieldfoxPolicy');
       const estimatedTokens = c.get('fieldfoxEstimatedTokens') ?? 0;
+      // Publish the measurement for a composing layer to meter against (P2-6d).
+      // Set only when a rung actually reported it: `undefined` must stay
+      // readable as absent, because a metering layer that cannot distinguish it
+      // from zero would bill a delivered fill as free.
+      if (usage !== undefined) c.set('fieldfoxMeasuredTokens', usage);
       if (store && siteKey && policy) {
         await reconcile(store, siteKey, policy, estimatedTokens, usage ?? null);
       }

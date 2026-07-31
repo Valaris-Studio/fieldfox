@@ -26,6 +26,18 @@ declare module 'hono' {
     // What kinds of input this request actually carried. Read by a composing
     // layer that prices or attributes a fill by input kind (see fillMiddleware).
     fieldfoxInputKinds: readonly RequestInputKind[];
+    // What the fill ACTUALLY consumed, summed across every ladder rung including
+    // the repair retry. Unlike every other variable here this one is POST-call:
+    // it is set by the fill handler once the provider answers, so a composing
+    // layer reads it after `await next()` (see fillMiddleware).
+    //
+    // ABSENT when no rung reported usage — deliberately not defaulted to 0. A
+    // layer that meters on this must be able to tell "no measurement" from
+    // "measured zero"; collapsing them bills real work as free. Compare against
+    // fieldfoxEstimatedTokens, which is the PRE-call estimate and counts input
+    // only (no system prompt, no output, no retry), so this number is normally
+    // the larger of the two.
+    fieldfoxMeasuredTokens: number;
   }
 }
 
