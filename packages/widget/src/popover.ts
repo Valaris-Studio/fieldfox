@@ -61,6 +61,14 @@ export interface PopoverOptions {
   acceptDocuments?: boolean;
 }
 
+// One route offered on the exhaustion surface. The URL is a caller-supplied
+// constant, not network input — anything arriving from the server is validated
+// before it gets here (see safeHttpUrl in element.ts).
+export interface OfferLink {
+  url: string;
+  text: string;
+}
+
 export interface PopoverHandle {
   open(): void;
   close(): void;
@@ -74,8 +82,10 @@ export interface PopoverHandle {
   // The free allowance ran out (CLOUD-3). Like showError in behaviour (reveal,
   // expand, focus) but NOT in styling: this is a next step, not a fault. The
   // optional link is the call to action; `linkUrl` must already be validated
-  // http(s) — it arrives from the network.
-  showOffer(message: string, linkText: string, linkUrl?: string): void;
+  // http(s) — it arrives from the network. `secondary` is an additional route
+  // offered beside it (self-hosting beside "create an account"), rendered after
+  // the primary so keyboard and screen-reader order matches priority.
+  showOffer(message: string, linkText: string, linkUrl?: string, secondary?: OfferLink): void;
   // Non-error informational status — the C4 fill report ("Filled 3, left 1").
   // The success settle: reveals the panel (hidden for the flight) directly as the
   // minimized status strip so the just-filled fields are visible for review
@@ -204,6 +214,11 @@ const PANEL_STYLES = `
    accent reserved for the call to action. */
 .ff-status.ff-offer { color: #1a1a1a; }
 .ff-offer-link { color: var(--fieldfox-accent, #e2622c); font-weight: 600; }
+/* The alternative route (self-hosting). Quieter than the primary action but not
+   hidden: the project treats self-hosting as a real equal, so it stays legible
+   rather than being demoted to grey small print. Inherits the panel's text
+   colour and drops the accent + weight that mark the primary call to action. */
+.ff-offer-link.ff-offer-alt { color: inherit; font-weight: 400; text-decoration: underline; }
 /* Done state: collapse to a title + status strip so the filled fields behind the
    panel are visible for review (pilot-finding 5). Click anywhere on the strip to
    re-expand. The title/status stay; the bulky intake controls hide. */
@@ -882,24 +897,34 @@ export function createPopover(
   //
   // `linkUrl` is caller-validated (http/https only); `message` is inserted as
   // TEXT, never markup — both arrive from the network.
-  function showOffer(message: string, linkText: string, linkUrl?: string): void {
+  function showOffer(message: string, linkText: string, linkUrl?: string, secondary?: OfferLink): void {
     status.textContent = message;
     status.classList.remove('ff-error');
     status.classList.add('ff-offer');
-    if (linkUrl) {
-      status.append(' ');
-      const link = document.createElement('a');
-      link.href = linkUrl;
-      link.textContent = linkText;
-      link.target = '_blank';
-      // noopener: never hand the host page's window to a cross-origin tab.
-      link.rel = 'noopener noreferrer';
-      link.className = 'ff-offer-link';
-      status.append(link);
-    }
+
+    // Appended in priority order, because DOM order is the order a keyboard and
+    // a screen reader meet them: the action that keeps this user working comes
+    // first, the alternative second.
+    if (linkUrl) appendOfferLink(linkUrl, linkText, 'ff-offer-link');
+    if (secondary) appendOfferLink(secondary.url, secondary.text, 'ff-offer-link ff-offer-alt');
+
     setHidden(false);
     setMinimized(false);
     panel.focus();
+  }
+
+  function appendOfferLink(url: string, text: string, className: string): void {
+    status.append(' ');
+    const link = document.createElement('a');
+    link.href = url;
+    link.textContent = text;
+    link.target = '_blank';
+    // noopener: never hand the host page's window to a cross-origin tab. Applies
+    // to EVERY offer link, not just the first — this is the protection a second
+    // link added later would otherwise quietly miss.
+    link.rel = 'noopener noreferrer';
+    link.className = className;
+    status.append(link);
   }
   function showStatus(message: string): void {
     status.textContent = message;

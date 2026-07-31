@@ -52,6 +52,10 @@ function statusEl(): HTMLElement {
   return host.shadowRoot.querySelector('.ff-status') as HTMLElement;
 }
 
+// The self-host link the widget always offers: a local constant, never server
+// input, so it is safe to render even when signupUrl is absent or hostile.
+const SELF_HOST_HREF = 'https://github.com/Valaris-Studio/fieldfox';
+
 // The server's CLOUD-2 refusal, verbatim.
 const EXHAUSTED_BODY = {
   error: 'free_allowance_exhausted',
@@ -147,7 +151,11 @@ test('exhaustion without a signupUrl still explains itself, with no dead link', 
   fireFill(form);
   await flush();
 
-  expect(statusEl().querySelector('a')).toBeNull();
+  // No SIGNUP anchor — that is the one that would point nowhere. The self-host
+  // link remains, because it is a hardcoded constant rather than server input
+  // and is exactly what a deployment with no signup flow should offer instead.
+  const hrefs = [...statusEl().querySelectorAll('a')].map((a) => a.getAttribute('href'));
+  expect(hrefs).toEqual([SELF_HOST_HREF]);
   expect(statusEl().textContent ?? '').toMatch(/free/i);
   expect(statusEl().classList.contains('ff-error')).toBe(false);
 });
@@ -164,7 +172,11 @@ test('a signupUrl that is not http(s) is refused — no javascript: injection', 
   fireFill(form);
   await flush();
 
-  expect(statusEl().querySelector('a')).toBeNull();
+  // The hostile URL reaches NO href. The self-host link survives because it is a
+  // local constant, never server input — asserting the exact href set is what
+  // proves the dangerous one was dropped rather than merely outnumbered.
+  const hrefs = [...statusEl().querySelectorAll('a')].map((a) => a.getAttribute('href'));
+  expect(hrefs).toEqual([SELF_HOST_HREF]);
   expect((statusEl().innerHTML ?? '').toLowerCase()).not.toContain('javascript:');
 });
 
@@ -195,4 +207,72 @@ test('the widget sends nothing extra to reach this state — it is a server sign
   expect(body).not.toHaveProperty('allowance');
   expect(body).not.toHaveProperty('siteKey');
   expect(body).not.toHaveProperty('metering');
+});
+
+// The exhaustion moment is the product's only conversion surface, and the
+// definition ranks self-hosting as a first-class equal rather than a footnote.
+// A developer who just hit the free ceiling is exactly the person who might
+// prefer to run it themselves, so both roads are offered — account first,
+// because that is the path that keeps them working in the next thirty seconds.
+
+test('the offer names what an account actually GIVES you, not just "sign up"', async () => {
+  const { form } = mountForm();
+  fetchSpy.mockResolvedValue(jsonResponse(EXHAUSTED_BODY, 402));
+
+  fireFill(form);
+  await flush();
+
+  const text = statusEl().textContent ?? '';
+  // "Create an account" alone asks for effort and promises nothing. The number
+  // is what makes the trade legible at a glance.
+  expect(text).toMatch(/free/i);
+  expect(statusEl().querySelector('a')?.getAttribute('href')).toBe('https://fieldfox.dev/signup');
+});
+
+test('self-hosting is offered as a second, quieter path', async () => {
+  const { form } = mountForm();
+  fetchSpy.mockResolvedValue(jsonResponse(EXHAUSTED_BODY, 402));
+
+  fireFill(form);
+  await flush();
+
+  const links = [...statusEl().querySelectorAll('a')];
+  expect(links.length).toBe(2);
+
+  // Account first in DOM order: it is the primary action, and screen readers and
+  // keyboard users meet it first.
+  expect(links[0].getAttribute('href')).toBe('https://fieldfox.dev/signup');
+  expect(links[1].getAttribute('href')).toMatch(/github\.com/);
+  expect(links[1].textContent).toMatch(/self-host|run it yourself/i);
+});
+
+test('every offer link is safe to open from a host page', async () => {
+  const { form } = mountForm();
+  fetchSpy.mockResolvedValue(jsonResponse(EXHAUSTED_BODY, 402));
+
+  fireFill(form);
+  await flush();
+
+  // noopener applies to the self-host link too — it was added for the signup
+  // link, and a second link is exactly where that protection gets forgotten.
+  for (const a of statusEl().querySelectorAll('a')) {
+    expect(a.getAttribute('rel')).toContain('noopener');
+    expect(a.getAttribute('target')).toBe('_blank');
+  }
+});
+
+test('with NO signupUrl configured, self-hosting is still offered', async () => {
+  // A self-hosted deployment sends no signupUrl. The visitor must still learn
+  // that running it themselves is possible, rather than hitting a dead end.
+  const { form } = mountForm();
+  fetchSpy.mockResolvedValue(
+    jsonResponse({ ...EXHAUSTED_BODY, signupUrl: undefined }, 402),
+  );
+
+  fireFill(form);
+  await flush();
+
+  const links = [...statusEl().querySelectorAll('a')];
+  expect(links.length).toBe(1);
+  expect(links[0].getAttribute('href')).toMatch(/github\.com/);
 });

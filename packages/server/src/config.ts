@@ -64,7 +64,18 @@ const FreeTierPolicy = z.object({
   dailyFillAllowance: z.number().int().positive().optional(),
   // Where an exhausted visitor is sent to keep going. Carried in the exhaustion
   // response so the widget can render a real call to action (CLOUD-3).
-  signupUrl: z.string().url().optional(),
+  //
+  // http(s) ONLY, checked explicitly: z.string().url() validates SYNTAX and
+  // happily accepts `javascript:alert(1)`, which would reach an href in the
+  // widget's offer. The widget sanitises again at render because by then the
+  // value is network input — this gate is for the deployer who misconfigures it.
+  signupUrl: z
+    .string()
+    .url()
+    .refine((u) => /^https?:$/.test(new URL(u).protocol), {
+      message: 'signupUrl must be http(s) — it is rendered as a link in the widget',
+    })
+    .optional(),
 });
 export type FreeTierPolicy = z.infer<typeof FreeTierPolicy>;
 
@@ -153,12 +164,27 @@ function parseFreeTierEnv(): FreeTierPolicy | undefined {
     rateLimit: intFromEnv('FIELDFOX_FREE_RATE_LIMIT'),
     rateWindowMs: intFromEnv('FIELDFOX_FREE_RATE_WINDOW_MS'),
     dailyTokenBudget: intFromEnv('FIELDFOX_FREE_DAILY_TOKEN_BUDGET'),
+    // Both optional, and both were previously UNREADABLE from the environment —
+    // production ran with FIELDFOX_FREE_DAILY_ALLOWANCE=50 set and enforced
+    // nothing, because the variable was never looked at. An accepted-then-ignored
+    // limit is worse than an absent one: it reads as protection that is not there.
+    //
+    // intFromEnv throws on a non-integer and zod's .positive() rejects 0 and
+    // negatives, so every unusable value fails the BOOT. Neither layer may fall
+    // back to a default: "0 free fills" and "no limit configured" are opposite
+    // intentions, and silently turning one into the other is how a cap vanishes.
+    dailyFillAllowance: intFromEnv('FIELDFOX_FREE_DAILY_ALLOWANCE'),
+    // Becomes an href in the widget's exhaustion offer, so zod's url() check at
+    // boot is the first of two gates; the widget sanitises again at render
+    // because the response is network input by the time it gets there.
+    signupUrl: process.env.FIELDFOX_FREE_SIGNUP_URL || undefined,
   });
   if (!parsed.success) {
     throw new Error(
       'FIELDFOX_FREE_MODEL enables the free lane, which also requires ' +
         'FIELDFOX_FREE_RATE_LIMIT, FIELDFOX_FREE_RATE_WINDOW_MS and ' +
-        `FIELDFOX_FREE_DAILY_TOKEN_BUDGET: ${JSON.stringify(parsed.error.issues)}`,
+        'FIELDFOX_FREE_DAILY_TOKEN_BUDGET; FIELDFOX_FREE_DAILY_ALLOWANCE and ' +
+        `FIELDFOX_FREE_SIGNUP_URL are optional but must be valid if set: ${JSON.stringify(parsed.error.issues)}`,
     );
   }
   return parsed.data;

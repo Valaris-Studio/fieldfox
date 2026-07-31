@@ -452,7 +452,12 @@ export class FieldFoxElement extends HTMLElement {
       // a next step. It gets the offer surface instead of the error one. A
       // self-hosted server never sends this code, so that path is untouched.
       const offer = allowanceOfferFor(error);
-      if (offer) panel.showOffer(offer.message, OFFER_LINK_TEXT, offer.signupUrl);
+      if (offer) {
+        panel.showOffer(offer.message, OFFER_LINK_TEXT, offer.signupUrl, {
+          url: SELF_HOST_URL,
+          text: SELF_HOST_LINK_TEXT,
+        });
+      }
       else panel.showError(errorMessageFor(error));
     }
   }
@@ -492,7 +497,7 @@ export class FieldFoxElement extends HTMLElement {
 
 // Call-to-action label on the exhaustion surface. Separate from the sentence so
 // the link text stays short and the copy around it can change independently.
-const OFFER_LINK_TEXT = 'Create an account';
+const OFFER_LINK_TEXT = 'Get a free account';
 
 // The hosted free allowance is spent (server: 402 free_allowance_exhausted).
 // Returns the copy + a validated link, or null when this error is anything else.
@@ -503,10 +508,22 @@ function allowanceOfferFor(error: unknown): { message: string; signupUrl?: strin
     return null;
   }
   return {
+    // Says three things in one line, in the order the reader needs them: what
+    // happened, that their data is safe, and what to do next. "Free fills" names
+    // the thing that ran out, so the offer that follows reads as the answer to it
+    // rather than an unrelated upsell.
     message: 'That used up the free fills for this site today — your form is unchanged.',
     signupUrl: safeHttpUrl(error.details?.signupUrl),
   };
 }
+
+// The second road, always offered. A developer who just hit the hosted ceiling
+// is precisely the person who might rather run it themselves, and the project
+// promises self-hosting as a first-class equal rather than a funnel dead-end —
+// so this link is present even when no signupUrl is configured, which is exactly
+// the self-hosted deployment's own case.
+const SELF_HOST_URL = 'https://github.com/Valaris-Studio/fieldfox';
+const SELF_HOST_LINK_TEXT = 'or self-host it';
 
 // Only http(s) may reach an href. `signupUrl` is network input, so rendering it
 // unvalidated would let a hostile or compromised endpoint run `javascript:` on

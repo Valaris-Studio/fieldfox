@@ -75,12 +75,30 @@ test('allowance exhausted: actionable offer, form verifiably unchanged', async (
   await expect(status).not.toHaveClass(/ff-error/);
   await expect(status).toHaveClass(/ff-offer/);
 
-  // A real, reachable call to action.
-  const link = status.locator('a');
-  await expect(link).toBeVisible();
-  await expect(link).toHaveAttribute('href', EXHAUSTED_BODY.signupUrl);
-  await expect(link).toHaveAttribute('target', '_blank');
-  await expect(link).toHaveAttribute('rel', /noopener/);
+  // A real, reachable call to action. Addressed by its class rather than by `a`,
+  // because the offer now carries a second route and "the only link" stopped
+  // being a safe way to mean "the signup link".
+  const signup = status.locator('a.ff-offer-link:not(.ff-offer-alt)');
+  await expect(signup).toBeVisible();
+  await expect(signup).toHaveAttribute('href', EXHAUSTED_BODY.signupUrl);
+  await expect(signup).toHaveAttribute('target', '_blank');
+  await expect(signup).toHaveAttribute('rel', /noopener/);
+
+  // The second road: self-hosting, offered beside the account rather than
+  // instead of it. Visible in a REAL browser, since a link that renders but is
+  // unreadable would satisfy jsdom and fail a human.
+  const selfHost = status.locator('a.ff-offer-alt');
+  await expect(selfHost).toBeVisible();
+  await expect(selfHost).toHaveAttribute('href', /github\.com/);
+  await expect(selfHost).toHaveAttribute('rel', /noopener/);
+
+  // Priority is expressed visually, not just in DOM order: the primary action
+  // carries the accent colour and the alternative does not.
+  const [primaryColor, altColor] = await Promise.all([
+    signup.evaluate((el) => getComputedStyle(el).color),
+    selfHost.evaluate((el) => getComputedStyle(el).color),
+  ]);
+  expect(primaryColor).not.toBe(altColor);
 
   // Fill-or-leave across the WHOLE request: nothing written, nothing left
   // disabled, and certainly never submitted.
