@@ -8,7 +8,7 @@ The widget is a framework-agnostic custom element with zero runtime dependencies
 
 ### CDN + SRI (recommended for HTML pages)
 
-Production embeds pin an **exact** version on jsDelivr and verify the bytes with an SRI hash. Exact-pinned versions cache on the CDN effectively forever; semver ranges and `latest` cache only ~7 days and are not production-safe. Generate the snippet for your built version with `node scripts/gen-snippet.mjs`, which prints:
+Production embeds pin an **exact** version on jsDelivr and verify the bytes with an SRI hash. Exact-pinned versions cache on the CDN effectively forever; semver ranges and `latest` cache only ~7 days and are not production-safe. Generate the snippet with `node scripts/gen-snippet.mjs`, which hashes the bytes the CDN actually serves for the pinned version — and refuses to print anything if your local build disagrees with them. It prints:
 
 ```html
 <script

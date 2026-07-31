@@ -87,11 +87,13 @@ The port override matters: the example pages POST to `:8787`, while the script's
 
 ## Embed it
 
-Production embeds pin an **exact** widget version on jsDelivr (semver ranges cache ~7 days on the CDN and are not production-safe) plus an SRI hash of the bundle. Generate the snippet for your built version:
+Production embeds pin an **exact** widget version on jsDelivr (semver ranges cache ~7 days on the CDN and are not production-safe) plus an SRI hash of the bundle. Generate the snippet:
 
 ```sh
-pnpm build && node scripts/gen-snippet.mjs
+node scripts/gen-snippet.mjs
 ```
+
+The hash comes from the bytes the CDN serves for the pinned version, so it cannot disagree with the URL. If you have a local build that differs from the published one, the script refuses to emit a snippet rather than printing one the browser would block.
 
 It prints a ready-to-paste snippet:
 
