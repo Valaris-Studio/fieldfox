@@ -1,9 +1,17 @@
-# Fieldfox loop prompt
+# Fieldfox session prompt
 
-Paste the block below after `/loop` in a fresh Claude Code session in this repo.
-It is designed to be run repeatedly: each iteration lands a coherent scope of work
-end to end and stops cleanly, so the next iteration starts from a clean tree and a
-current board.
+Paste the block below into a fresh Claude Code session in this repo — on its own for
+a single working block, or after `/loop` to repeat it.
+
+Each run lands a coherent scope of cards, then stops and reports. It re-orients from
+the board every time, so it carries no state between runs and always starts from a
+clean tree and a current board.
+
+This is the ONLY handoff prompt. It replaced `SESSION-PROMPT.md` (a stale copy that
+still told sessions to call `list_cards`, which now exceeds the token limit) and
+`NEXT-SESSION.md` (a one-off situational handoff whose scope has landed). Keep it
+current in place rather than writing a second one alongside it — three overlapping
+copies is how the wrong one gets pasted.
 
 ---
 
