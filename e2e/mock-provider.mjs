@@ -20,6 +20,7 @@
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { CANNED, FORCE_ERROR, SKIP_AND_OMIT } from './canned.mjs';
+import { PRODUCT_SAMPLE } from './product-sample.mjs';
 
 const MAX_RECORDED = 200;
 
@@ -76,7 +77,11 @@ export function startMockProvider(port) {
         }
 
         const fields = parseFields(prompt);
-        const fills = prompt.includes(SKIP_AND_OMIT) ? skipAndOmitFills(fields) : cannedFills(fields);
+        const fills = fields.some(field => field.name === 'product-name')
+          ? fields.filter(field => field.fillable).map(field =>
+              Object.hasOwn(PRODUCT_SAMPLE.values, field.name)
+                ? set(field.id, PRODUCT_SAMPLE.values[field.name]) : skip(field.id))
+          : prompt.includes(SKIP_AND_OMIT) ? skipAndOmitFills(fields) : cannedFills(fields);
         return respond(200, envelope(body.model, JSON.stringify({ fills })));
       });
       return;

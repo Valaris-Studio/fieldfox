@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fieldfox | Ficha de producto</title>
+    <style>
+      :root { font-family: system-ui, sans-serif; color: #182d31; background: #f5f7f6; }
+      * { box-sizing: border-box; }
+      body { margin: 0 auto; max-width: 1040px; padding: 40px 24px 64px; }
+      header { margin-bottom: 28px; }
+      .eyebrow { color: #346c63; font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+      h1 { font-size: clamp(28px, 5vw, 40px); font-weight: 650; letter-spacing: -.04em; margin: 8px 0 12px; }
+      p { line-height: 1.6; }
+      .intro { color: #536766; max-width: 680px; }
+      main { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 28px; align-items: start; }
+      aside { padding: 4px 0; }
+      h2 { font-size: 16px; margin: 0 0 16px; }
+      ol { padding-left: 20px; line-height: 1.6; color: #536766; font-size: 14px; }
+      li { padding-left: 4px; margin-bottom: 14px; }
+      .note { border-top: 1px solid #d6dfdc; padding-top: 16px; color: #536766; font-size: 13px; }
+      form { background: white; border: 1px solid #d6dfdc; border-radius: 14px; padding: 28px; display: grid; gap: 18px; }
+      .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+      .dimensions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+      .field { display: grid; gap: 7px; min-width: 0; }
+      label { font-size: 13px; font-weight: 600; }
+      input, select, textarea { width: 100%; min-width: 0; font: inherit; font-size: 15px; padding: 10px 12px; border: 1px solid #bdccc6; border-radius: 7px; color: inherit; background: white; }
+      input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 3px solid #b3d7cc; outline-offset: 2px; }
+      textarea { resize: vertical; }
+      .help { margin: 0; color: #536766; font-size: 12px; line-height: 1.5; }
+      .review { border-top: 1px solid #e4eae7; padding-top: 18px; display: grid; gap: 10px; }
+      button { justify-self: start; border: 0; border-radius: 7px; padding: 11px 16px; font: inherit; font-size: 14px; font-weight: 600; background: #225c50; color: white; cursor: pointer; }
+      #review-status { margin: 0; color: #536766; font-size: 13px; line-height: 1.5; }
+      @media (max-width: 720px) {
+        body { padding: 24px 16px 48px; }
+        main { grid-template-columns: 1fr; gap: 16px; }
+        aside ol { margin-bottom: 0; }
+        form { padding: 20px; }
+      }
+      @media (max-width: 420px) { .pair { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="eyebrow">Fieldfox · Prueba local</span>
+      <h1>De la fuente a tu ficha de producto.</h1>
+      <p class="intro">Adjunta un documento o una imagen con datos legibles. Revisa lo completado y corrige lo necesario antes de usar la ficha.</p>
+    </header>
+    <main>
+      <aside>
+        <h2>Completar y revisar</h2>
+        <ol>
+          <li>Abre Fieldfox junto al formulario. Pega texto o adjunta la fuente asignada.</li>
+          <li>Comprueba cada dato con el documento. Si falta información, deja el campo como está.</li>
+          <li>Corrige los valores y marca tu revisión. Esta página no guarda ni envía la ficha.</li>
+        </ol>
+        <p class="note">Una foto sin etiqueta no confirma material, medidas ni SKU. No deduzcas datos que la fuente no indica.</p>
+      </aside>
+      <form id="product-form" autocomplete="off">
+        <div class="field">
+          <label for="product-name">Nombre del producto</label>
+          <input id="product-name" name="product-name" type="text" />
+        </div>
+        <div class="pair">
+          <div class="field"><label for="sku">SKU</label><input id="sku" name="sku" type="text" /></div>
+          <div class="field"><label for="brand">Marca</label><input id="brand" name="brand" type="text" /></div>
+        </div>
+        <div class="field">
+          <label for="description">Descripción</label>
+          <textarea id="description" name="description" rows="3" data-ff-hint="Usar solo la descripción explícita de la fuente; no agregar ventajas o atributos inferidos."></textarea>
+        </div>
+        <div class="pair">
+          <div class="field">
+            <label for="material">Material</label>
+            <select id="material" name="material">
+              <option value="">Sin confirmar</option>
+              <option value="acero">Acero</option>
+              <option value="aluminio">Aluminio</option>
+              <option value="madera">Madera</option>
+              <option value="plastico">Plástico</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="weight">Peso (kg)</label>
+            <input id="weight" name="weight" type="number" min="0" step="any" data-ff-hint="Peso en kilogramos. No inferir el peso desde la imagen." />
+          </div>
+        </div>
+        <div class="dimensions">
+          <div class="field"><label for="width">Ancho (cm)</label><input id="width" name="width" type="number" min="0" step="any" /></div>
+          <div class="field"><label for="depth">Fondo (cm)</label><input id="depth" name="depth" type="number" min="0" step="any" /></div>
+          <div class="field"><label for="height">Alto (cm)</label><input id="height" name="height" type="number" min="0" step="any" /></div>
+        </div>
+        <div class="field">
+          <label for="manual-note">Nota interna</label>
+          <input id="manual-note" name="manual-note" type="text" data-ff-ignore aria-describedby="manual-help" />
+          <p id="manual-help" class="help">Solo para tu revisión manual. Fieldfox no lee ni completa este campo.</p>
+        </div>
+        <div class="review">
+          <button type="button" id="mark-reviewed">Marcar revisión local</button>
+          <p id="review-status" role="status" aria-live="polite">Pendiente de revisar. No se ha guardado ni enviado la ficha.</p>
+        </div>
+      </form>
+    </main>
+    <script src="../../packages/widget/dist/fieldfox.js"></script>
+    <field-fox
+      target="#product-form"
+      endpoint="http://localhost:8787/api/fill"
+      site-key="ffx_pk_dev0000000000000000000000000000"
+      form-id="product-card-v1"
+      context="Ficha de producto. Completar solo datos explícitos; omitir datos ausentes o contradictorios. Nunca inferir peso, material, SKU o medidas por apariencia."
+      accept-documents
+      adjust
+    ></field-fox>
+    <script>
+      const form = document.querySelector('#product-form');
+      const status = document.querySelector('#review-status');
+      form.addEventListener('submit', event => event.preventDefault());
+      form.addEventListener('input', () => {
+        status.textContent = 'Hay cambios por revisar. No se ha guardado ni enviado la ficha.';
+      });
+      form.addEventListener('change', () => {
+        status.textContent = 'Hay cambios por revisar. No se ha guardado ni enviado la ficha.';
+      });
+      document.querySelector('#mark-reviewed').addEventListener('click', () => {
+        status.textContent = 'Revisión marcada en esta página. No se ha guardado ni enviado la ficha.';
+      });
+    </script>
+  </body>
+</html>
