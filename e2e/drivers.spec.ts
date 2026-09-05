@@ -66,7 +66,7 @@ test('plain-html ARIA widgets: comboboxes and switches fill; an unmatchable valu
   const planBefore = await page.locator('#plan').textContent();
 
   await openPanelAndFill(page, 'Deploy in Frankfurt on the gold tier, with nightly backups on.');
-  await expect(ui(page).status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(ui(page).status).toContainText('Review', { timeout: 15_000 });
 
   // Driven: matched by accessible name at fill time, never by an option list
   // harvested at introspection (there is no open-probe).
@@ -108,7 +108,7 @@ test('plain-html: an editable combobox fills by typing, and a virtualized one by
   });
 
   await openPanelAndFill(page, 'Camila Rojas owns it, running out of the Quito 10 datacenter.');
-  await expect(ui(page).status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(ui(page).status).toContainText('Review', { timeout: 15_000 });
 
   await expect(page.locator('#owner')).toHaveValue(CANNED.comboboxByLabel.owner);
   // Only ever in the DOM after the driver scrolled the virtualized window to it.
@@ -126,7 +126,7 @@ test('react-host Radix: portalled Select and Switch fill through the real design
   await page.goto(RADIX_URL);
 
   await openPanelAndFill(page, 'Deploy in Frankfurt on the gold tier, nightly backups on.');
-  await expect(ui(page).status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(ui(page).status).toContainText('Review', { timeout: 15_000 });
 
   // Radix mirrors committed state into the app, so the rendered state blob is
   // the honest witness that the value actually landed in the framework model —
@@ -153,7 +153,7 @@ test('react-host tiptap: the rich-text editor fills; a bare contenteditable is l
     page,
     'Disk pressure on node 7 triggered a failover at 02:14 UTC. Title it "Node 7 failover".',
   );
-  await expect(ui(page).status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(ui(page).status).toContainText('Review', { timeout: 15_000 });
 
   // The text must be in the EDITOR'S model, not merely in the DOM the driver
   // touched — clicking Save reads it back through tiptap's own getText().

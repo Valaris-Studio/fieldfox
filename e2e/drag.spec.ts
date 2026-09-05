@@ -122,7 +122,7 @@ test('the dragged position survives a fill round-trip', async ({ page }) => {
   await contextInput.fill(`I am ${CANNED.fullName} (${CANNED.email}).`);
   await fillButton.click();
   await expect(panel).toBeHidden(); // hidden while the request is on the wire
-  await expect(status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(status).toContainText('Review', { timeout: 15_000 });
   await expect(panel).toHaveClass(/ff-minimized/);
 
   // Re-expand by clicking the minimized strip.
@@ -148,7 +148,7 @@ test('minimize then expand restores the dragged position', async ({ page }) => {
   await contextInput.fill(`I am ${CANNED.fullName} (${CANNED.email}).`);
   await fillButton.click();
   await expect(panel).toBeHidden(); // hidden while the request is on the wire
-  await expect(status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(status).toContainText('Review', { timeout: 15_000 });
   await expect(panel).toHaveClass(/ff-minimized/);
 
   // The docked strip is a different position than the dragged full panel …

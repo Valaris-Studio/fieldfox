@@ -147,7 +147,7 @@ Adjustment mode is for integration and development only — it should **not** sh
 2. The panel has a textarea for context and an attachment drop zone (drop, paste, or pick files).
 3. The panel is **draggable** by its header, clamped to the viewport. It has an **×** close button, and Escape closes it.
 4. Pressing **Fill form** hides the panel for the duration of the request; an animated border tracer circles the form to signal progress.
-5. On **success**, the panel returns as a minimized status strip docked clear of the form ("Filled 3 fields, left 1 unchanged. Review, then submit the form."), so the freshly filled fields are visible for review. Click the strip to re-expand.
+5. On **success**, the panel returns as a minimized status strip docked clear of the form ("Filled 3 fields, left 1 unchanged. Review the form."), so the freshly filled fields are visible for review. Click the strip to re-expand.
 6. On **error**, the panel returns expanded and focused, showing the error so the user can retry.
 
 The panel's drag position resets when it closes; a fresh open re-anchors near the form.

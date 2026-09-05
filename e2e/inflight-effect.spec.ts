@@ -83,7 +83,7 @@ test('tracer overlay is visible over the form during flight and gone after a suc
   await expect(overlay).toHaveCount(1);
 
   // After the success settle the overlay is torn down.
-  await expect(status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(status).toContainText('Review', { timeout: 15_000 });
   await expect(overlay).toHaveCount(0);
 });
 
@@ -124,7 +124,7 @@ test('form-less host: tracer overlay circles the resolved container', async ({ p
   await expect(overlay).toBeVisible();
   await assertOverlaysAnchor(overlay, page.locator('#signup-card'));
 
-  await expect(status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(status).toContainText('Review', { timeout: 15_000 });
   await expect(overlay).toHaveCount(0);
 });
 
@@ -142,6 +142,6 @@ test('native-dialog host: tracer overlay paints over the dialog form and settles
   await expect(overlay).toBeVisible();
   await assertOverlaysAnchor(overlay, page.locator('#signup-form'));
 
-  await expect(status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(status).toContainText('Review', { timeout: 15_000 });
   await expect(overlay).toHaveCount(0);
 });

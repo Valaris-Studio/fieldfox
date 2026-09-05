@@ -83,7 +83,7 @@ test('zero-config snippet: no endpoint, no site key, still fills', async ({ page
   await contextInput.fill(`I am Jane Doe, jane@doe.dev, at Andes Cloud.`);
   await fillButton.click();
 
-  await expect(status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(status).toContainText('Review', { timeout: 15_000 });
 
   // The fill landed, from a page that configured nothing.
   await expect(page.locator('#full-name')).toHaveValue(CANNED.fullName);

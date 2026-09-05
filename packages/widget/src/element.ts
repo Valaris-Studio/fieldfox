@@ -589,7 +589,7 @@ function summarize(report: FillReport): string {
   if (filled === 0 && left === 0) return 'No fields to fill.';
   const parts = [`Filled ${filled} field${filled === 1 ? '' : 's'}`];
   if (left > 0) parts.push(`left ${left} unchanged`);
-  return `${parts.join(', ')}. Review, then submit the form.`;
+  return `${parts.join(', ')}. Review the form.`;
 }
 
 // customElements.define throws on a duplicate name OR a re-used constructor; two

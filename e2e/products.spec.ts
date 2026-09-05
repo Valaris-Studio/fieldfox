@@ -47,6 +47,8 @@ async function prepareFill(page: Page, text: string) {
 }
 
 async function assertApplied(page: Page) {
+  await expect(page.locator('field-fox .ff-status')).toContainText('Review the form.');
+  await expect(page.locator('field-fox .ff-status')).not.toContainText(/submit/i);
   for (const [name, value] of Object.entries(PRODUCT_SAMPLE.values)) {
     await expect(page.locator('#' + name)).toHaveValue(value as string);
   }

@@ -89,7 +89,7 @@ test('flag ON (plain host): a PDF attaches, rides the wire with the current sche
   expect(documents[0].dataUrl.startsWith('data:application/pdf')).toBe(true);
 
   // The mocked plan still applies on top of the document attachment.
-  await expect(status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(status).toContainText('Review', { timeout: 15_000 });
   await expect(page.locator('#email')).toHaveValue(CANNED.email);
 });
 
@@ -112,7 +112,7 @@ test('flag OFF (formless host): the same PDF is not accepted and the wire carrie
   const posted = await bodyPromise;
   // A flag-off host never sends documents (empty array or the field absent).
   expect(posted.documents ?? []).toEqual([]);
-  await expect(status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(status).toContainText('Review', { timeout: 15_000 });
 });
 
 test('flag ON (plain host): a text file inlines into contextText between the attachment delimiters; documents stays empty', async ({ page }) => {

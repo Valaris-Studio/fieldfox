@@ -42,7 +42,7 @@ test('a host-altered native value is restored, never confirmed by substring', as
     res.url().endsWith('/api/fill') && res.request().method() === 'POST');
   await page.locator('field-fox [part="fill-button"]').click();
   expect((await response).status()).toBe(200);
-  await expect(page.locator('field-fox .ff-status')).toContainText('Review, then submit');
+  await expect(page.locator('field-fox .ff-status')).toContainText('Review');
   const outcomes = await page.locator('html').getAttribute('data-outcomes');
   const status = await page.locator('field-fox .ff-status').textContent();
   const counts = /Filled (\d+) fields?, left (\d+) unchanged/.exec(status ?? '');
