@@ -14,7 +14,7 @@ const evidenceRoot = resolve(process.env.FIELDFOX_CODEX_EVIDENCE ?? '../evidence
 await mkdir(evidenceRoot, { recursive: true, mode: 0o700 });
 // Refuse to reuse a previous run, preserving its raw evidence.
 const callsRoot = join(evidenceRoot, 'calls'); await mkdir(callsRoot, { recursive: false, mode: 0o700 });
-const codex = process.env.FIELDFOX_CODEX_BIN ?? '/Users/matiasmatthews/.local/bin/codex';
+const codex = process.env.FIELDFOX_CODEX_BIN ?? 'codex';
 const built = spawnSync('pnpm', ['--filter', '@fieldfox/server...', '--filter', '@fieldfox/widget...', 'build'], { cwd: root, stdio: 'inherit' });
 if (built.status !== 0) process.exit(built.status ?? 1);
 const token = randomBytes(32).toString('hex');

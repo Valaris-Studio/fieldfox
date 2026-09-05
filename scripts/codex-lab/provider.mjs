@@ -178,11 +178,11 @@ export async function infer(body, { evidenceRoot, codex, signal }) {
         await writeFile(source, bytes);
         const entry = { filename: source.split('/').at(-1), mime, sha256: hash(bytes), renderedImages: [] };
         if (mime === 'application/pdf') {
-          const info = await runProcess(process.env.FIELDFOX_PDFINFO ?? '/Users/matiasmatthews/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override/pdfinfo', [source], { timeout: 20_000, signal });
+          const info = await runProcess(process.env.FIELDFOX_PDFINFO ?? 'pdfinfo', [source], { timeout: 20_000, signal });
           const pages = Number(/^Pages:\s+(\d+)/m.exec(info.stdout)?.[1]);
           if (info.failure || info.code || !pages || pages > 2) throw new LabError(400, 'PDF must contain one or two readable pages');
           const prefix = join(folder, 'render-' + sources.length);
-          const render = await runProcess(process.env.FIELDFOX_PDFTOPPM ?? '/Users/matiasmatthews/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override/pdftoppm', ['-f', '1', '-l', String(pages), '-r', '144', '-png', source, prefix],
+          const render = await runProcess(process.env.FIELDFOX_PDFTOPPM ?? 'pdftoppm', ['-f', '1', '-l', String(pages), '-r', '144', '-png', source, prefix],
             { timeout: 40_000, signal });
           if (render.failure || render.code) throw new LabError(400, 'local PDF rendering failed');
           const names = (await readdir(folder)).filter(name => name.startsWith('render-' + sources.length + '-') && name.endsWith('.png')).sort();
