@@ -19,13 +19,13 @@
 
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
-import { CANNED, FORCE_ERROR, SKIP_AND_OMIT } from './canned.mjs';
+import { CANNED, FORCE_ERROR, FORCE_TRANSPORT_ERROR, SKIP_AND_OMIT } from './canned.mjs';
 import { PRODUCT_SAMPLE } from './product-sample.mjs';
 
 const MAX_RECORDED = 200;
 
 /** @returns {Promise<import('node:http').Server>} */
-export function startMockProvider(port) {
+export function startMockProvider(port, host) {
   // Artificial response latency so the specs can observe the in-flight state
   // (fields disabled + shimmer) before the plan lands. Read here, not at module
   // scope: e2e-env.mjs sets the env AFTER its (hoisted) import of this module.
@@ -65,6 +65,19 @@ export function startMockProvider(port) {
             recorded.completedAt = new Date().toISOString();
           }, DELAY_MS);
 
+        if (prompt.includes(FORCE_TRANSPORT_ERROR)) {
+          // Transport failure, not malformed model content: advertise a longer
+          // HTTP body, send only its beginning, then close the TCP connection.
+          recorded.fault = 'truncated-http-body';
+          res.writeHead(200, { 'content-type': 'application/json', 'content-length': '1024' });
+          res.write('{"choices":[');
+          setTimeout(() => {
+            recorded.transportClosed = true;
+            res.destroy();
+          }, DELAY_MS);
+          return;
+        }
+
         if (prompt.includes(FORCE_ERROR)) {
           // Rung 1: pretend strict json_schema is unsupported (HTTP 400 →
           // ResponseFormatUnsupported → the server drops to rung 2)…
@@ -93,7 +106,7 @@ export function startMockProvider(port) {
 
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, () => {
+    server.listen(port, host, () => {
       console.log(`[mock-llm] OpenAI-compatible mock on http://127.0.0.1:${port} (delay ${DELAY_MS}ms)`);
       resolve(server);
     });
