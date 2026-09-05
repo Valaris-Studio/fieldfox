@@ -262,3 +262,32 @@ The widget makes no external network calls beyond your fill endpoint, and loads 
 ## Wire contract
 
 The current wire contract is `schemaVersion = 4`, defined as a zod schema in `packages/shared`. If you pin an older widget version whose major the server no longer serves, the server refuses with `426 schema_version_unsupported` and the widget shows an "out of date — the site needs to update its snippet" message. Keeping the embedded widget version current avoids this; see the version-skew section of [docs/SELF-HOSTING.md](SELF-HOSTING.md#version-skew-and-upgrades).
+
+## Fill outcome event
+
+This branch adds `fieldfox:result`; the historical 0.1.1 CDN snippet above does not expose it. Consume a build containing this change. Hosted and self-hosted endpoints use exactly the same event and widget.
+
+Listen on the `<field-fox>` element. It dispatches one terminal `CustomEvent<FieldFoxResult>` for each started fill, with `bubbles: true` and `composed: true`. A document listener can observe connected widgets across enclosing shadow roots. Use `event.composedPath()` to identify the widget when shadow retargeting applies. After a widget is removed, only listeners on the detached element or its remaining ancestors can receive its abort; a detached node cannot bubble to document.
+
+```ts
+import type { FieldFoxResult } from '@fieldfox/widget';
+const widget = document.querySelector('field-fox')!;
+widget.addEventListener('fieldfox:result', (event) => {
+  const result = (event as CustomEvent<FieldFoxResult>).detail;
+  if (result.status === 'filled') {
+    console.log(result.filledCount, result.leftCount);
+  }
+  // Review the fields. Submission remains a separate human action.
+});
+```
+
+| status | Other properties | Meaning |
+| --- | --- | --- |
+| filled | filledCount, leftCount | The executor finished. Counts come from confirmed readbacks and attempted writes left unchanged. Skipped or omitted fields are not attempted writes. Both counts may be zero. |
+| refused | httpStatus, optional errorCode, optional signupUrl | The server returned 4xx. A validated HTTP(S) signupUrl is exposed only for free_allowance_exhausted. |
+| error | optional httpStatus, optional errorCode | Network, malformed response, server 5xx, or application failure. |
+| aborted | None | Supersession, disconnect, or rebinding cancelled the operation. No later success or error is emitted for that operation. |
+
+The machine code is emitted only when it matches `[a-z][a-z0-9_]{0,63}`. Response bodies, account state, balances, credit amounts, form context, field IDs and values are never copied into the event. The event reports a fill outcome, not billing or form submission.
+
+Notifications run in a microtask after synchronous widget cleanup, so a listener may safely initiate another fill. An abort can occur after earlier fields were confirmed; it is not a transactional rollback and deliberately carries no zero-filled claim. The executor stops further writes and restores an unconfirmed in-progress field. The standalone exhaustion offer and self-hosting link remain in the widget.

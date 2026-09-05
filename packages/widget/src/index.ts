@@ -5,6 +5,7 @@ import { FieldFoxElement, registerFieldFox } from './element.js';
 export const WIDGET_VERSION = __WIDGET_VERSION__;
 
 export { FieldFoxElement, registerFieldFox };
+export type { FieldFoxResult } from './result.js';
 export { triggerPosition } from './trigger.js';
 export { introspectForms, type IntrospectionResult } from './introspect.js';
 export { createPopover, type PopoverHandle } from './popover.js';

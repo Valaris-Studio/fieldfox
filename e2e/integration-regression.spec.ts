@@ -13,6 +13,14 @@ test.beforeEach(async ({ page }) => {
   await page.locator('#full-name').fill('Original Owner');
   await page.evaluate(() => {
     document.documentElement.dataset.submits = '0';
+    const outcomes: unknown[] = [];
+    document.querySelector('field-fox')!.addEventListener('fieldfox:result', (event) => {
+      outcomes.push((event as CustomEvent).detail);
+      document.documentElement.dataset.outcomes = JSON.stringify(outcomes);
+    });
+    document.addEventListener('fieldfox:result', (event) => {
+      document.documentElement.dataset.bubbledOutcome = String(event.bubbles && event.composed);
+    }, { once: true });
     document.querySelector('form')!.addEventListener('submit', (event) => {
       event.preventDefault();
       const root = document.documentElement;
@@ -35,6 +43,14 @@ test('a host-altered native value is restored, never confirmed by substring', as
   await page.locator('field-fox [part="fill-button"]').click();
   expect((await response).status()).toBe(200);
   await expect(page.locator('field-fox .ff-status')).toContainText('Review, then submit');
+  const outcomes = await page.locator('html').getAttribute('data-outcomes');
+  const status = await page.locator('field-fox .ff-status').textContent();
+  const counts = /Filled (\d+) fields?, left (\d+) unchanged/.exec(status ?? '');
+  expect(counts).not.toBeNull();
+  expect(JSON.parse(outcomes!)).toEqual([{
+    status: 'filled', filledCount: Number(counts![1]), leftCount: Number(counts![2]),
+  }]);
+  await expect(page.locator('html')).toHaveAttribute('data-bubbled-outcome', 'true');
   await expect(page.locator('#full-name')).toHaveValue('Original Owner');
   await expect(page.locator('#email')).toHaveValue(CANNED.email);
   await expect(page.locator('#full-name')).toBeEnabled();
@@ -70,5 +86,7 @@ test('disconnect leaves the host unchanged after the local provider completes', 
   await expect(page.locator('#email')).toHaveValue('');
   await expect(page.locator('#full-name')).toBeEnabled();
   await expect(page.locator('#full-name')).not.toHaveClass(/ff-fill-dim/);
+  expect(JSON.parse((await page.locator('html').getAttribute('data-outcomes'))!))
+    .toEqual([{ status: 'aborted' }]);
   await expect(page.locator('html')).toHaveAttribute('data-submits', '0');
 });
