@@ -1176,3 +1176,10 @@ not results of the new branch. Record future regressions and Chrome evidence
 against the tested SHA; deterministic providers establish integration, not
 real model quality. No external-app integrations or previously interrupted
 audit checks are part of this continuation.
+
+## 11. Value evaluation protocol, 2026-09-05
+
+The [proposed evaluation method](VALUE_EVALUATION.md) separates deterministic
+integration coverage from human value and self-serve adoption. Its 50-case
+sample and 30% saving threshold are proposals to ratify before observing,
+not measured results. Count review, correction, errors and abandonment.
