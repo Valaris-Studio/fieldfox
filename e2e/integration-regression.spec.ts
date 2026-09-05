@@ -43,6 +43,9 @@ test('a host-altered native value is restored, never confirmed by substring', as
 
 test('disconnect leaves the host unchanged after the local provider completes', async ({ page }) => {
   const marker = `disconnect-${crypto.randomUUID()}`;
+  const failedRequest = page.waitForEvent('requestfailed', {
+    predicate: (request) => request.url().endsWith('/api/fill') && request.method() === 'POST',
+  });
   await page.locator('field-fox [part="trigger"]').click();
   await page.locator('field-fox [part="context-input"]').fill(`Jane Doe. ${marker}`);
   await page.locator('field-fox [part="fill-button"]').click();
@@ -56,9 +59,13 @@ test('disconnect leaves the host unchanged after the local provider completes', 
   };
   await expect.poll(recorded).toBeDefined();
   await page.locator('field-fox').evaluate((widget) => widget.remove());
-  // Provider completion is the clock, instead of a fixed sleep that could
-  // pass before a late response arrives. No network response is replaced.
+  // Observe the actual browser request abort as well as upstream completion.
+  // Then let the browser process the rejection before checking the final DOM.
+  const terminated = await failedRequest;
+  expect(terminated.failure()?.errorText).toMatch(/ERR_ABORTED/);
+  console.info(`I0 browser request terminal: requestfailed ${terminated.failure()?.errorText}`);
   await expect.poll(async () => (await recorded())?.completedAt).toBeDefined();
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
   await expect(page.locator('#full-name')).toHaveValue('Original Owner');
   await expect(page.locator('#email')).toHaveValue('');
   await expect(page.locator('#full-name')).toBeEnabled();
