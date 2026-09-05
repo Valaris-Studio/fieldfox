@@ -11,7 +11,13 @@ export default defineConfig({
   reporter: 'list',
   timeout: 45_000,
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        ...(process.env.FIELDFOX_E2E_CHROME === '1' && { channel: 'chrome' }),
+      },
+    },
     { name: 'webkit', use: { ...devices['Desktop Safari'] } },
   ],
   webServer: {

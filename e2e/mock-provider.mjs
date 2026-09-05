@@ -53,13 +53,15 @@ export function startMockProvider(port) {
 
         const prompt = promptTextOf(body.messages ?? []);
         const responseFormat = body.response_format?.type ?? 'none';
-        requests.push({ at: new Date().toISOString(), model: body.model, responseFormat, prompt });
+        const recorded = { at: new Date().toISOString(), model: body.model, responseFormat, prompt };
+        requests.push(recorded);
         if (requests.length > MAX_RECORDED) requests.shift();
 
         const respond = (status, payload) =>
           setTimeout(() => {
             res.writeHead(status, { 'content-type': 'application/json' });
             res.end(JSON.stringify(payload));
+            recorded.completedAt = new Date().toISOString();
           }, DELAY_MS);
 
         if (prompt.includes(FORCE_ERROR)) {

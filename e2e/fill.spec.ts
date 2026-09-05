@@ -176,6 +176,8 @@ test('react-host: filled values are registered in react-hook-form state (React 1
   // the form's own button echoes handleSubmit's data. If the native-setter +
   // dispatched-event writes hadn't registered with react-hook-form (RESEARCH
   // §2 value-tracker bypass), this JSON would still hold the defaultValues.
+  // Only the user submits the filled RHF state.
+  await expect(page.locator('#submitted-json')).toHaveCount(0);
   await page.locator('#profile-form button[type="submit"]').click();
   const submitted = page.locator('#submitted-json');
   await expect(submitted).toBeVisible();
