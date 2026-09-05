@@ -293,3 +293,9 @@ For production, swap the minimal metadata logger for [`pino`](https://getpino.io
 | Budget exhausted | `429 daily_budget_exceeded` | The key's daily token budget kill switch tripped; raise `dailyTokenBudget` or wait for the daily reset. |
 | Provider failure | `502` (`fill_failed` / `upstream_error`) | The provider errored or produced output that couldn't be validated after the repair retry. The widget shows "Could not fill the form." Check provider credentials, model capabilities (vision / `file` parts), and provider-side logs. |
 | Misconfigured deploy | `500 internal_error` | Config or LLM-env error surfaced as structured JSON — read the `message` field (missing site-key map, missing `FIELDFOX_LLM_*`, invalid JSON). |
+
+## Parsed form metadata for composing middleware
+
+The post-guardrail `fillMiddleware` slot can read `c.get('fieldfoxFormId')`: the optional opaque label already parsed by the guardrail, validated with the shared FillRequest formId schema. Absent, empty, non-string, or over-limit input leaves it undefined. The label is preserved verbatim, never inferred from a URL. This seam carries no form context or field contents and adds no required wire property.
+
+A compositor may attribute usage to this label without calling `c.req.json()` again. In Hono, that call reparses cached body text. The fill handler still performs its normal whole-request validation independently, so a metadata label does not imply the rest of the request is valid. Available on this branch after the form-id seam change; earlier published packages do not expose this variable.

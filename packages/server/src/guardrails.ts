@@ -1,4 +1,5 @@
 import type { Context, MiddlewareHandler } from 'hono';
+import { FillRequest } from '@fieldfox/shared';
 import {
   ALLOWED_IMAGE_MIME,
   FREE_TIER_BUDGET_KEY,
@@ -19,6 +20,8 @@ declare module 'hono' {
     fieldfoxSiteKey: string;
     fieldfoxPolicy: SiteKeyPolicy;
     fieldfoxEstimatedTokens: number;
+    // Optional opaque label from the parsed request, never the form content.
+    fieldfoxFormId: string | undefined;
     // Resolved per-formId model override (config.formPolicies[formId].model), if
     // any. The fill handler passes it to the provider call in place of the
     // default model.
@@ -436,6 +439,8 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
     // an explicit per-formId policy still wins, since that is a deliberate
     // deployer choice rather than a lane default. The formId is an opaque token,
     // not user content, so it is safe in operational metadata.
+    const parsedFormId = FillRequest.shape.formId.safeParse(body.formId);
+    if (parsedFormId.success && parsedFormId.data) c.set('fieldfoxFormId', parsedFormId.data);
     const formId = typeof body.formId === 'string' ? body.formId : undefined;
     const modelOverride = (formId ? config.formPolicies?.[formId]?.model : undefined) ?? freeModel;
     if (modelOverride) c.set('fieldfoxModelOverride', modelOverride);
