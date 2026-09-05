@@ -46,8 +46,9 @@ current operation.
 | D0 / 2967da58-77f2-4582-9ac2-359ed5557391 | None | This dated decision map and preserved anchors, reviewed against current sources |
 | I0 / 8a8a8bc7-fe96-4410-8914-20fa23df4803 | D0 | Integrate widget/shared/server/DOM on owned HTML and React fixtures; exact readback, never-submit, refusal and abort/supersession behavior; Chrome and meaningful regression coverage |
 | I1 / cc5a2871-0ba1-4401-b05c-64fe9dbd216b | I0 | Public terminal outcome event, exactly once per completed attempt, observable across shadow boundary, no billing/account payload; local package and real consuming listener |
-| I5 / 7ffba9da-c4b3-4f2c-b067-4a90a779d952 | The separate service's I4 | Only if needed: a generic policy resolver extension, with tests and a real consumer. No account or payment implementation in this repo |
-| I7 / 61885aa6-05a4-4167-82c7-db384f6d4885 | D0 and I1 | Canonical public Markdown, accurate embed/support instructions, identifiable package and standalone consumer; no npm/CDN publication |
+| I5S / 3fba5a02-17d7-40f8-8b23-5ca613ebc80f | I3S | Generic async FormPolicyResolver for an admitted key and validated formId; caller integration and fallback checks. Separate service I5 consumes the identified local package |
+| I5 / 7ffba9da-c4b3-4f2c-b067-4a90a779d952 | The separate service's I4 and I5S | The service persists and consumes policies; no account or payment implementation in this repo |
+| I7 / 61885aa6-05a4-4167-82c7-db384f6d4885 | D0, I1 and the separate service's I4 | Canonical public Markdown, accurate embed/support instructions, identifiable package and standalone consumer; no npm/CDN publication |
 
 The service owns its own implementation, data and acceptance documents. Never
 copy its private source, configuration, data or decision evidence into this repo.

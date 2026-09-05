@@ -152,3 +152,32 @@ Nothing from the request body is logged — no context text, field labels/values
 or image bytes. Only operational metadata (key id, counts, tokens, latency,
 error class). Production should swap the minimal metadata logger for `pino` with
 a `redact` path list.
+
+## Dynamic form policies
+
+The experimental local package also exports `FormPolicyResolver` and accepts
+`createApp({ resolveFormPolicy })`. It receives `{ siteKey, formId }` for each
+keyed request admitted by key, origin and request-limit checks. The form label
+has already passed the shared validator. Empty/missing labels and anonymous
+requests do not call this resolver. Account and storage semantics belong to the
+embedding application, not this package.
+
+Return `{ model: 'your-offered-model' }` to override that call. Return
+`undefined` (or a policy without a model) to retain the static form policy, then
+the lane/provider default. Without the resolver the previous configuration path
+is unchanged, including deliberate static overrides on the anonymous lane.
+The client cannot supply a model through this API.
+
+A thrown lookup, unusable model or model outside a configured
+`modelAllowlist` produces HTTP 503 with `form_policy_unavailable` before token
+reservation, composing fill middleware or the provider call. Lookup error
+messages are not returned. Use the same allowed catalog when saving policies
+and when resolving them; a resolver must scope the lookup using the admitted key,
+not the form label alone. Resolution is per request, with no server-side policy
+cache, so subsequent fills can observe a saved change.
+
+The consuming application can read the resolved model through
+`fieldfoxModelOverride` in its existing `fillMiddleware`, for model-aware pricing
+or attribution. This extension does not set prices or grant account credits.
+The experiment distributes an identified local tarball; this section does not
+claim that the extension is available in an official npm release.

@@ -3,8 +3,8 @@ export { app, createApp, type AppOptions } from './app.js';
 // The injection seams a composing deployment needs to type its own call:
 // a site-key resolver backed by its own store, and the policy shape that
 // resolver must return.
-export type { SiteKeyResolver, RequestInputKind } from './guardrails.js';
-export type { SiteKeyPolicy, GuardrailConfig } from './config.js';
+export type { SiteKeyResolver, FormPolicyResolver, RequestInputKind } from './guardrails.js';
+export type { SiteKeyPolicy, FormPolicy, GuardrailConfig } from './config.js';
 
 // The site key the free lane attributes its requests to (it has no real key, so
 // the guardrails charge this sentinel instead). A deployment that meters must be
