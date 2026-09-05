@@ -2,9 +2,11 @@
 
 This guide is for frontend developers integrating the `<field-fox>` custom element into a page or app. To stand up the server the widget talks to, see [docs/SELF-HOSTING.md](SELF-HOSTING.md).
 
-The widget is a framework-agnostic custom element with zero runtime dependencies (~18KB gzip). Its entire UI lives in an open shadow root; it never wraps, moves, or injects into your form.
+The widget is a framework-agnostic custom element with zero runtime dependencies (under the 35KB gzip eager-bundle budget). Its entire UI lives in an open shadow root; it never wraps, moves, or injects into your form.
 
 ## Install
+
+For this unpublished branch, use [the exact local artifacts](LOCAL-ARTIFACTS.md). The historical CDN example below does not include this branch's result event. The local console loads its identified artifact and copies an explicit endpoint with the same bytes and hash. Public release instructions remain separate.
 
 ### CDN + SRI (recommended for HTML pages)
 

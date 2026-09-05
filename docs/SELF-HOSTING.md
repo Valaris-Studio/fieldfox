@@ -6,6 +6,8 @@ Self-hosting is a **first-class, permanently supported** way to run Fieldfox —
 
 For the terse package-level reference, see [packages/server/README.md](../packages/server/README.md). This guide is the canonical deployer document; where the two overlap, they agree.
 
+For the unpublished local experiment, follow [Consume local artifacts](LOCAL-ARTIFACTS.md#clean-self-hosted-consumer) in an empty consumer directory. The commands below are for an existing public repository checkout.
+
 ## Prerequisites
 
 - **Node ≥ 20** (the repo's `engines.node` requirement).
@@ -22,7 +24,7 @@ The `@fieldfox/server` package ships a thin Node listener that binds the app to 
 
 ```sh
 pnpm install
-pnpm --filter @fieldfox/server build
+pnpm --filter @fieldfox/server... build
 pnpm --filter @fieldfox/server start   # runs: node dist/serve.js
 ```
 
