@@ -1167,3 +1167,12 @@ commits. Narrowing that guard (a text input is native *unless* it carries
 `escalatedClick` constructs one when available and falls back to a `MouseEvent`
 of the same type name; dispatch is by type string, so a `pointerdown` listener
 still fires under test and the escalation path is genuinely covered.
+
+## 10. Experimental evidence, 2026-09-04
+
+See the [decision map and OSS units](EXPERIMENT.md). Section 9.15 remains the
+as-built reference for drivers and eager loading. Historical benchmarks are
+not results of the new branch. Record future regressions and Chrome evidence
+against the tested SHA; deterministic providers establish integration, not
+real model quality. No external-app integrations or previously interrupted
+audit checks are part of this continuation.

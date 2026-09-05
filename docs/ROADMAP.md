@@ -6,6 +6,11 @@ that bills." Board cards cite it by section.
 
 Written 2026-07-27. The decisions in §1 are locked; the rest is sequencing.
 
+2026-09-04 continuation: [the local experiment decision map](EXPERIMENT.md)
+records later board amendments and branch-only acceptance. The initial status
+below is a dated snapshot, not current production evidence. Existing anchors
+remain stable.
+
 ## 0. Where we actually are
 
 Shipped and working: the widget (v1 + v1.1 drivers, 19.8 KB gzip of a 35 KB budget),
@@ -27,7 +32,7 @@ The gap between those two paragraphs is this roadmap.
 | # | Decision | Consequence |
 |---|---|---|
 | L1 | **The public repo stays MIT and fully functional standalone.** The SaaS lives in a separate private repo that *composes* `createApp()`. | Never a fork, never a license check, never a feature flag in `packages/server`. A self-hoster gets the same server we run. |
-| L2 | **Prepaid weighted credits.** text fill = 1, image fill = 3, document fill = 5. Packs (one-off Checkout) plus monthly plans that grant credits and unlock the better model. | One currency. Margin tracks cost shape instead of fighting it. |
+| L2 | **Prepaid size-scaled credits.** The board decision of 2026-07-29 superseded flat text/image/document weights. Coefficients, per-request floor and grants come from one validated service configuration. | One currency, measured request size, reserve/settle/refund. Pricing remains outside the widget. |
 | L3 | **One Next.js app** (`apps/console`) for marketing, docs, auth, dashboard, and billing. | One design system, one deploy. |
 | L4 | **Free lane is untouched.** Anonymous, Origin-attributed, cheapest model, daily allowance. Signup is triggered by exhausting it, never before. | The north star survives monetization. |
 | L5 | **Deploy target is GCP** (Cloud Run + Cloud SQL). | Node container, no rewrite for an edge runtime. |
@@ -66,6 +71,11 @@ initial commit, before any file that could carry a secret existed.
 
 ### Weights
 
+**Historical defaults, superseded 2026-07-29:** the 1/3/5 table and margin
+discussion below explain the original problem. They are not current prices.
+Size-scaling, with a 9-credit floor and the coupled 500-credit starter grant,
+is the later board decision (P2-6c); the composing service owns its configuration.
+
 Every number in this section is a **config default, not a constant** (L7). The table is
 where the defaults start; the config is what the running system reads.
 
@@ -90,8 +100,9 @@ document tail.**
 The v1 answer is a **per-request token ceiling** enforced in the guardrail, above which
 the request is refused with a clear message rather than served at a loss. One number,
 enforceable where the estimate already exists, and it makes the flat 5-credit price
-honest by construction. Scaling credits with size and routing documents to a cheap
-long-context model are both viable later; neither is needed to launch.
+honest by construction. That original proposal was superseded by the 2026-07-29
+size-scaling decision; do not defer size-scaled charging on the basis of this
+historical margin discussion.
 
 Because pricing is config, this stops being a matter of remembering: a **margin
 calculator** reads the config plus a measured cost-per-token and fails loudly on a
