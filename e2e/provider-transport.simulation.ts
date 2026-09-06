@@ -10,9 +10,9 @@ test('truncated provider response preserves the product and a manual retry recov
   await page.goto('http://127.0.0.1:38480/examples/plain-html/products.html');
   await page.locator('field-fox').evaluate((widget, endpoint) => widget.setAttribute('endpoint', endpoint), api);
   const prior = {
-    'product-name': 'Producto previo', sku: 'PRE-001', brand: 'Marca previa',
-    description: 'Descripción previa', material: 'madera', weight: '8.5',
-    width: '42', depth: '21', height: '63', 'manual-note': 'NOTA-SINTETICA-PRIVADA',
+    'product-name': 'Previous product', sku: 'PRE-001', brand: 'Previous brand',
+    description: 'Previous description', material: 'wood', weight: '8.5',
+    width: '42', depth: '21', height: '63', 'manual-note': 'PRIVATE-SYNTHETIC-NOTE',
   };
   for (const [id, value] of Object.entries(prior)) {
     if (id === 'material') await page.locator('#' + id).selectOption(value);
@@ -51,8 +51,8 @@ test('truncated provider response preserves the product and a manual retry recov
   expect(attempt[0]).toMatchObject({ responseFormat: 'json_schema', fault: 'truncated-http-body', transportClosed: true });
   await page.screenshot({ path: testInfo.outputPath('transport-failure.png'), fullPage: true });
 
-  await page.locator('#brand').fill('Corrección manual tras el error');
-  await expect(page.locator('#brand')).toHaveValue('Corrección manual tras el error');
+  await page.locator('#brand').fill('Manual correction after the error');
+  await expect(page.locator('#brand')).toHaveValue('Manual correction after the error');
   await page.locator('field-fox [part="context-input"]').fill(PRODUCT_SAMPLE.text + ' recovery-' + marker);
   const recoveredResponse = page.waitForResponse(response => response.url() === api && response.request().method() === 'POST');
   await page.locator('field-fox [part="fill-button"]').click();

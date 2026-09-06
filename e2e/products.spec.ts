@@ -8,7 +8,7 @@ const SERVER_PORT = Number(process.env.FIELDFOX_E2E_SERVER_PORT ?? 8794);
 
 test.beforeEach(async ({ page }) => {
   await page.goto(PRODUCT_URL);
-  await expect(page).toHaveTitle('Fieldfox | Ficha de producto');
+  await expect(page).toHaveTitle('Fieldfox | Product card');
   await page.locator('field-fox').evaluate((widget, port) => {
     widget.setAttribute('endpoint', 'http://localhost:' + port + '/api/fill');
   }, SERVER_PORT);
@@ -26,13 +26,13 @@ test('product fixture supports manual review without submitting or sending data'
   page.on('request', request => {
     if (request.method() !== 'GET') writes.push(request.url());
   });
-  await page.getByLabel('Nombre del producto', { exact: true }).fill('Mesa Brisa');
+  await page.getByLabel('Product name', { exact: true }).fill('Brisa Table');
   await page.getByLabel('SKU', { exact: true }).fill('BRI-101');
-  await page.getByLabel('Nota interna', { exact: true }).fill('Revisada por el operador');
-  await page.getByRole('button', { name: 'Marcar revisión local' }).click();
-  await expect(page.locator('#review-status')).toContainText('Revisión marcada');
-  await page.getByLabel('Nombre del producto', { exact: true }).fill('Mesa Brisa corregida');
-  await expect(page.locator('#review-status')).toContainText('Hay cambios por revisar');
+  await page.getByLabel('Internal note', { exact: true }).fill('Reviewed by the operator');
+  await page.getByRole('button', { name: 'Mark as reviewed locally' }).click();
+  await expect(page.locator('#review-status')).toContainText('Reviewed on this page');
+  await page.getByLabel('Product name', { exact: true }).fill('Brisa Table corrected');
+  await expect(page.locator('#review-status')).toContainText('Changes pending review');
   expect(writes).toEqual([]);
   await expect(page.locator('button[type="submit"]')).toHaveCount(0);
   await expect(page.locator('html')).toHaveAttribute('data-submits', '0');
@@ -41,7 +41,7 @@ test('product fixture supports manual review without submitting or sending data'
 
 async function prepareFill(page: Page, text: string) {
   await page.locator('#weight').fill('8.5');
-  await page.locator('#manual-note').fill('NOTA-PRIVADA-NO-ENVIAR');
+  await page.locator('#manual-note').fill('PRIVATE-NOTE-DO-NOT-SEND');
   await page.locator('field-fox [part="trigger"]').click();
   await page.locator('field-fox [part="context-input"]').fill(text);
 }
@@ -53,14 +53,14 @@ async function assertApplied(page: Page) {
     await expect(page.locator('#' + name)).toHaveValue(value as string);
   }
   await expect(page.locator('#weight')).toHaveValue('8.5');
-  await expect(page.locator('#manual-note')).toHaveValue('NOTA-PRIVADA-NO-ENVIAR');
+  await expect(page.locator('#manual-note')).toHaveValue('PRIVATE-NOTE-DO-NOT-SEND');
   await expect(page.locator('html')).toHaveAttribute('data-submits', '0');
 }
 
 for (const kind of ['text', 'image', 'document'] as const) {
   test('product ' + kind + ' crosses the real server and leaves unsupported data unchanged', async ({ page }, testInfo) => {
     const marker = 'product-' + kind + '-' + crypto.randomUUID();
-    await prepareFill(page, (kind === 'text' ? PRODUCT_SAMPLE.text : 'Usa solo la fuente adjunta.') + ' ' + marker);
+    await prepareFill(page, (kind === 'text' ? PRODUCT_SAMPLE.text : 'Use only the attached source.') + ' ' + marker);
     if (kind !== 'text') {
       await page.locator('field-fox .ff-file-input').setInputFiles(
         join(__dirname, kind === 'image' ? 'product-card.png' : 'product-card.pdf'));
@@ -73,7 +73,7 @@ for (const kind of ['text', 'image', 'document'] as const) {
     expect(res.status()).toBe(200);
     const body = res.request().postDataJSON();
     expect(JSON.stringify(body.formSchema)).not.toContain('manual-note');
-    expect(JSON.stringify(body)).not.toContain('NOTA-PRIVADA-NO-ENVIAR');
+    expect(JSON.stringify(body)).not.toContain('PRIVATE-NOTE-DO-NOT-SEND');
     if (kind === 'document') {
       expect(body.documents).toHaveLength(1);
       expect(body.documents[0].mediaType).toBe('application/pdf');
@@ -82,22 +82,22 @@ for (const kind of ['text', 'image', 'document'] as const) {
     await assertApplied(page);
     const upstream = await fetch('http://127.0.0.1:8793/__mock/requests').then(r => r.json());
     expect(upstream.requests.some((request: { prompt: string }) => request.prompt.includes(marker))).toBe(true);
-    await page.locator('#brand').fill('Marca corregida por mí');
-    await expect(page.locator('#brand')).toHaveValue('Marca corregida por mí');
+    await page.locator('#brand').fill('Brand corrected by me');
+    await expect(page.locator('#brand')).toHaveValue('Brand corrected by me');
     await page.screenshot({ path: testInfo.outputPath('product-' + kind + '.png'), fullPage: true });
   });
 }
 
 test('provider failure preserves the whole product and allows another attempt', async ({ page }, testInfo) => {
   await prepareFill(page, FORCE_ERROR);
-  await page.locator('#product-name').fill('Producto revisado');
+  await page.locator('#product-name').fill('Reviewed product');
   const response = page.waitForResponse(res => res.url().endsWith('/api/fill') && res.request().method() === 'POST');
   await page.locator('field-fox [part="fill-button"]').click();
   expect((await response).status()).toBe(502);
   await expect(page.locator('field-fox .ff-status')).toContainText(/could not|couldn't|try again/i);
-  await expect(page.locator('#product-name')).toHaveValue('Producto revisado');
+  await expect(page.locator('#product-name')).toHaveValue('Reviewed product');
   await expect(page.locator('#weight')).toHaveValue('8.5');
-  await expect(page.locator('#manual-note')).toHaveValue('NOTA-PRIVADA-NO-ENVIAR');
+  await expect(page.locator('#manual-note')).toHaveValue('PRIVATE-NOTE-DO-NOT-SEND');
   await expect(page.locator('#product-name')).toBeEnabled();
   await page.locator('field-fox [part="context-input"]').fill(PRODUCT_SAMPLE.text);
   await page.locator('field-fox [part="fill-button"]').click();

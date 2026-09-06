@@ -155,7 +155,7 @@ a `redact` path list.
 
 ## Dynamic form policies
 
-The experimental local package also exports `FormPolicyResolver` and accepts
+Since 0.5.0. The package exports `FormPolicyResolver` and accepts
 `createApp({ resolveFormPolicy })`. It receives `{ siteKey, formId }` for each
 keyed request admitted by key, origin and request-limit checks. The form label
 has already passed the shared validator. Empty/missing labels and anonymous
@@ -179,5 +179,3 @@ cache, so subsequent fills can observe a saved change.
 The consuming application can read the resolved model through
 `fieldfoxModelOverride` in its existing `fillMiddleware`, for model-aware pricing
 or attribution. This extension does not set prices or grant account credits.
-The experiment distributes an identified local tarball; this section does not
-claim that the extension is available in an official npm release.

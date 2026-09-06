@@ -77,7 +77,7 @@ pnpm dev
 
 Open `http://localhost:8080/examples/plain-html/products.html` in the local harness to complete a product card from text, a labelled image or a PDF. The example keeps a manual-only internal note, leaves unsupported data untouched and lets the operator correct values and mark a local review without saving or submitting the form. It uses the same OSS widget and server as the other examples.
 
-The synthetic sample in `e2e/product-card.pdf` and `e2e/product-card.png` exercises attachment transport with predetermined provider responses. Those tests do not demonstrate real model extraction quality. The development endpoint/site key follow the harness below; LLM credentials stay on the server. The widget currently uses its existing English controls; the product form and review instructions are in Spanish.
+The synthetic sample in `e2e/product-card.pdf` and `e2e/product-card.png` exercises attachment transport with predetermined provider responses. Those tests do not demonstrate real model extraction quality. The development endpoint and site key follow the harness below; LLM credentials stay on the server.
 
 ### No LLM credentials? Run the whole thing anyway
 

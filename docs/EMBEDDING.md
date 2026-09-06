@@ -6,8 +6,6 @@ The widget is a framework-agnostic custom element with zero runtime dependencies
 
 ## Install
 
-For this unpublished branch, use [the exact local artifacts](LOCAL-ARTIFACTS.md). The historical CDN example below does not include this branch's result event. The local console loads its identified artifact and copies an explicit endpoint with the same bytes and hash. Public release instructions remain separate.
-
 ### CDN + SRI (recommended for HTML pages)
 
 Production embeds pin an **exact** version on jsDelivr and verify the bytes with an SRI hash. Exact-pinned versions cache on the CDN effectively forever; semver ranges and `latest` cache only ~7 days and are not production-safe. Generate the snippet with `node scripts/gen-snippet.mjs`, which hashes the bytes the CDN actually serves for the pinned version — and refuses to print anything if your local build disagrees with them. It prints:
@@ -267,7 +265,7 @@ The current wire contract is `schemaVersion = 4`, defined as a zod schema in `pa
 
 ## Fill outcome event
 
-This branch adds `fieldfox:result`; the historical 0.1.1 CDN snippet above does not expose it. Consume a build containing this change. Hosted and self-hosted endpoints use exactly the same event and widget.
+Available from `@fieldfox/widget` 0.3.0. Hosted and self-hosted endpoints use exactly the same event and widget.
 
 Listen on the `<field-fox>` element. It dispatches one terminal `CustomEvent<FieldFoxResult>` for each started fill, with `bubbles: true` and `composed: true`. A document listener can observe connected widgets across enclosing shadow roots. Use `event.composedPath()` to identify the widget when shadow retargeting applies. After a widget is removed, only listeners on the detached element or its remaining ancestors can receive its abort; a detached node cannot bubble to document.
 

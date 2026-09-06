@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Fieldfox | Ficha de producto</title>
+    <title>Fieldfox | Product card</title>
     <style>
       :root { font-family: system-ui, sans-serif; color: #182d31; background: #f5f7f6; }
       * { box-sizing: border-box; }
@@ -42,62 +42,62 @@
   </head>
   <body>
     <header>
-      <span class="eyebrow">Fieldfox · Prueba local</span>
-      <h1>De la fuente a tu ficha de producto.</h1>
-      <p class="intro">Adjunta un documento o una imagen con datos legibles. Revisa lo completado y corrige lo necesario antes de usar la ficha.</p>
+      <span class="eyebrow">Fieldfox · Local example</span>
+      <h1>From the source to your product card.</h1>
+      <p class="intro">Attach a document or an image with legible data. Review what was filled and correct what you need before using the card.</p>
     </header>
     <main>
       <aside>
-        <h2>Completar y revisar</h2>
+        <h2>Fill and review</h2>
         <ol>
-          <li>Abre Fieldfox junto al formulario. Pega texto o adjunta la fuente asignada.</li>
-          <li>Comprueba cada dato con el documento. Si falta información, deja el campo como está.</li>
-          <li>Corrige los valores y marca tu revisión. Esta página no guarda ni envía la ficha.</li>
+          <li>Open Fieldfox next to the form. Paste text or attach the source you were given.</li>
+          <li>Check every value against the document. If information is missing, leave the field as it is.</li>
+          <li>Correct the values and mark your review. This page never saves or submits the card.</li>
         </ol>
-        <p class="note">Una foto sin etiqueta no confirma material, medidas ni SKU. No deduzcas datos que la fuente no indica.</p>
+        <p class="note">An unlabelled photo does not confirm material, dimensions or SKU. Do not infer data the source does not state.</p>
       </aside>
       <form id="product-form" autocomplete="off">
         <div class="field">
-          <label for="product-name">Nombre del producto</label>
+          <label for="product-name">Product name</label>
           <input id="product-name" name="product-name" type="text" />
         </div>
         <div class="pair">
           <div class="field"><label for="sku">SKU</label><input id="sku" name="sku" type="text" /></div>
-          <div class="field"><label for="brand">Marca</label><input id="brand" name="brand" type="text" /></div>
+          <div class="field"><label for="brand">Brand</label><input id="brand" name="brand" type="text" /></div>
         </div>
         <div class="field">
-          <label for="description">Descripción</label>
-          <textarea id="description" name="description" rows="3" data-ff-hint="Usar solo la descripción explícita de la fuente; no agregar ventajas o atributos inferidos."></textarea>
+          <label for="description">Description</label>
+          <textarea id="description" name="description" rows="3" data-ff-hint="Use only the description stated in the source; do not add inferred benefits or attributes."></textarea>
         </div>
         <div class="pair">
           <div class="field">
             <label for="material">Material</label>
             <select id="material" name="material">
-              <option value="">Sin confirmar</option>
-              <option value="acero">Acero</option>
-              <option value="aluminio">Aluminio</option>
-              <option value="madera">Madera</option>
-              <option value="plastico">Plástico</option>
+              <option value="">Unconfirmed</option>
+              <option value="steel">Steel</option>
+              <option value="aluminum">Aluminum</option>
+              <option value="wood">Wood</option>
+              <option value="plastic">Plastic</option>
             </select>
           </div>
           <div class="field">
-            <label for="weight">Peso (kg)</label>
-            <input id="weight" name="weight" type="number" min="0" step="any" data-ff-hint="Peso en kilogramos. No inferir el peso desde la imagen." />
+            <label for="weight">Weight (kg)</label>
+            <input id="weight" name="weight" type="number" min="0" step="any" data-ff-hint="Weight in kilograms. Do not infer the weight from the image." />
           </div>
         </div>
         <div class="dimensions">
-          <div class="field"><label for="width">Ancho (cm)</label><input id="width" name="width" type="number" min="0" step="any" /></div>
-          <div class="field"><label for="depth">Fondo (cm)</label><input id="depth" name="depth" type="number" min="0" step="any" /></div>
-          <div class="field"><label for="height">Alto (cm)</label><input id="height" name="height" type="number" min="0" step="any" /></div>
+          <div class="field"><label for="width">Width (cm)</label><input id="width" name="width" type="number" min="0" step="any" /></div>
+          <div class="field"><label for="depth">Depth (cm)</label><input id="depth" name="depth" type="number" min="0" step="any" /></div>
+          <div class="field"><label for="height">Height (cm)</label><input id="height" name="height" type="number" min="0" step="any" /></div>
         </div>
         <div class="field">
-          <label for="manual-note">Nota interna</label>
+          <label for="manual-note">Internal note</label>
           <input id="manual-note" name="manual-note" type="text" data-ff-ignore aria-describedby="manual-help" />
-          <p id="manual-help" class="help">Solo para tu revisión manual. Fieldfox no lee ni completa este campo.</p>
+          <p id="manual-help" class="help">For your manual review only. Fieldfox never reads or fills this field.</p>
         </div>
         <div class="review">
-          <button type="button" id="mark-reviewed">Marcar revisión local</button>
-          <p id="review-status" role="status" aria-live="polite">Pendiente de revisar. No se ha guardado ni enviado la ficha.</p>
+          <button type="button" id="mark-reviewed">Mark as reviewed locally</button>
+          <p id="review-status" role="status" aria-live="polite">Pending review. The card has not been saved or submitted.</p>
         </div>
       </form>
     </main>
@@ -107,7 +107,7 @@
       endpoint="http://localhost:8787/api/fill"
       site-key="ffx_pk_dev0000000000000000000000000000"
       form-id="product-card-v1"
-      context="Ficha de producto. Completar solo datos explícitos; omitir datos ausentes o contradictorios. Nunca inferir peso, material, SKU o medidas por apariencia."
+      context="Product card. Fill only explicit data; omit missing or contradictory data. Never infer weight, material, SKU or dimensions from appearance."
       accept-documents
       adjust
     ></field-fox>
@@ -116,13 +116,13 @@
       const status = document.querySelector('#review-status');
       form.addEventListener('submit', event => event.preventDefault());
       form.addEventListener('input', () => {
-        status.textContent = 'Hay cambios por revisar. No se ha guardado ni enviado la ficha.';
+        status.textContent = 'Changes pending review. The card has not been saved or submitted.';
       });
       form.addEventListener('change', () => {
-        status.textContent = 'Hay cambios por revisar. No se ha guardado ni enviado la ficha.';
+        status.textContent = 'Changes pending review. The card has not been saved or submitted.';
       });
       document.querySelector('#mark-reviewed').addEventListener('click', () => {
-        status.textContent = 'Revisión marcada en esta página. No se ha guardado ni enviado la ficha.';
+        status.textContent = 'Reviewed on this page. The card has not been saved or submitted.';
       });
     </script>
   </body>
