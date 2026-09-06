@@ -1,5 +1,11 @@
 # @fieldfox/widget
 
+## 0.3.1
+
+### Patch Changes
+
+- The IIFE bundle is now pure ASCII. 0.3.0 carried a raw combining-mark range (U+0300 to U+036F) in the option-matching normaliser's regex, plus a few typographic glyphs in strings. On a host page served without any charset declaration the browser decodes the script as windows-1252, each multi-byte range endpoint becomes two characters, the regex literal is out of order, and the whole script fails to parse: `<field-fox>` is never defined. To an integrator this looks exactly like an SRI failure: the script tag is there, the hash is right, nothing happens, and the only trace is a console `SyntaxError: Invalid regular expression ... Range out of order in character class`. The ranges and glyphs are written as `\u` escapes, matching behaviour is unchanged (case, diacritics and whitespace still fold; a substring still never matches), and `pnpm verify` now fails on any non-ASCII byte in either bundle.
+
 ## 0.3.0
 
 ### Minor Changes
