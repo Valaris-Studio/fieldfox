@@ -77,9 +77,9 @@ and schema test get amended in INT4), and the widget status copy is
 Cloud Run + Cloud SQL, project `valaris-microsaas`, `max-instances=1`. Doing real
 anonymous fills. Runbook: `docs/DEPLOY.md` in fieldfox-cloud.
 
-**Published**: `@fieldfox/server@0.4.1`, `@fieldfox/widget@0.2.0`,
-`@fieldfox/shared@0.2.0`. After INT2, main carries 0.5.0/0.3.0 UNPUBLISHED
-until INT3.
+**Published 2026-09-06 (INT3)**: `@fieldfox/server@0.5.0`, `@fieldfox/widget@0.3.0`,
+`@fieldfox/shared@0.2.0`. Bytes verified from the registry: the widget carries
+`fieldfox:result`, the server carries `resolveFormPolicy`.
 
 **Board**: 70 Done + 13 in Matías's `Done Matias` column, INT1 in Review, INT2..INT7
 in Backlog, 7 originals `superseded`. Matías's experiment columns are his: do
