@@ -89,6 +89,8 @@ FIELDFOX_E2E_SERVER_PORT=8787 node scripts/e2e-env.mjs
 
 You get a real fill end to end — real widget, real server, real guardrails, real wire contract — before signing up with any provider. The same property means **`pnpm test:e2e` passes on a clean clone with zero credentials**, so a contributor can run the entire acceptance suite on day one.
 
+`pnpm test:simulation` goes one step further down the stack: it runs the real widget and server against a mock provider that closes the TCP connection mid-body, proving a transport failure leaves the form untouched and a retry recovers.
+
 The port override matters: the example pages POST to `:8787`, while the script's default (`8794`, chosen because `8787` is often occupied on dev machines) is only reachable by the e2e suite, which remaps the port in-page.
 
 ## Embed it

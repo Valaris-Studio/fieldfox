@@ -9,7 +9,10 @@ export default defineConfig({
   retries: 0,
   timeout: 30_000,
   reporter: 'list',
-  use: { ...devices['Desktop Chrome'], channel: 'chrome' },
+  use: {
+    ...devices['Desktop Chrome'],
+    ...(process.env.FIELDFOX_E2E_CHROME === '1' && { channel: 'chrome' }),
+  },
   webServer: {
     command: 'node scripts/simulation-env.mjs',
     url: 'http://127.0.0.1:38483/',
