@@ -57,16 +57,33 @@ happened twice (P2-4a, P2-6d) and both times it was the right call.
 
 Never commit credentials. Never add one repo as a remote of the other.
 
-## 2. State as of 2026-07-31
+## 2. State as of 2026-09-06
+
+**Matías's integration branch is on origin in BOTH repos**
+(`codex/fieldfox-integration-20260905`, OSS tip 21c7f75, cloud tip a509a8c) and
+was reviewed 2026-09-06: gates reproduced, backend accepted, shell rejected. It
+lands in STAGES through cards `INT2 → INT3 → INT4 → INT5 → INT6 → INT7` (read
+the definition decision "MATIAS INTEGRATION BRANCH" and the verdict note on
+INT1). INT3 and INT7 are Sebastian's. **Do NOT re-implement P3-3, P3-4, P3-4a,
+P3-4b, P3-6, P3-7 or P2-7** — they are labelled `superseded` because the branch
+already contains them; INT6 closes them.
+
+Two decisions taken 2026-09-06 that the code on that branch already reflects:
+`form_id` on `usage_events` is site-author METADATA (accepted; the 001 comment
+and schema test get amended in INT4), and the widget status copy is
+"Review the form." (accepted).
 
 **Hosted API LIVE**: `https://fieldfox-api-193585536439.us-central1.run.app`
 Cloud Run + Cloud SQL, project `valaris-microsaas`, `max-instances=1`. Doing real
 anonymous fills. Runbook: `docs/DEPLOY.md` in fieldfox-cloud.
 
 **Published**: `@fieldfox/server@0.4.1`, `@fieldfox/widget@0.2.0`,
-`@fieldfox/shared@0.2.0`.
+`@fieldfox/shared@0.2.0`. After INT2, main carries 0.5.0/0.3.0 UNPUBLISHED
+until INT3.
 
-**Board**: 70 Done, 15 Backlog, In Progress and Review both EMPTY.
+**Board**: 70 Done + 13 in Matías's `Done Matias` column, INT1 in Review, INT2..INT7
+in Backlog, 7 originals `superseded`. Matías's experiment columns are his: do
+not move or delete his cards.
 
 Recently landed and worth knowing:
 - Size-scaled credits are live end to end (P2-6c/d/e). Reserve from the estimate,
@@ -98,20 +115,10 @@ service, a DB column) is missing. **Check the precondition, not the flag.**
 Move each card to In Progress before writing code. Land them ONE AT A TIME —
 committed, gated, card moved, note written — before starting the next.
 
-**Suggested order:**
-
-1. **P3-3: auth — email-only OTP.** Fully specified and decided. Email is the
-   ONLY required field; any profile field is optional and must never block a free
-   account. Session duration is chosen by the user AT the OTP prompt. No
-   passwords — that deletes the whole credential-storage surface. Email delivery
-   has no provider yet: build a dev transport that logs the code to the console,
-   swappable later in one line.
-2. **P3-4a: `form_id` on `usage_events`.** Small, and it is the precondition that
-   makes P3-4's forms panel report reality instead of nothing. `formId` already
-   exists on the wire, is already sent by the widget, and the OSS server already
-   routes per-form model overrides on it — only the metering layer discards it.
-3. **P3-4: dashboard.** The big one; likely a session of its own. Read the card's
-   FILTER section before writing any component.
+**Suggested order:** INT2 (OSS, autonomous) → stop for INT3 (Sebastian publishes
+0.5.0/0.3.0) → INT4 → INT5 → INT6 (all autonomous, cloud). Each INT card's
+precondition is a PUBLISHED version or a landed SHA — check `npm view` and
+`git log`, not `dependency_status`.
 
 ## 4. Method
 
@@ -175,7 +182,8 @@ evidence. Multi-agent workflows ONLY if Sebastian asks.
 - An ABSENT measurement is not zero. `?? 0` on that path serves real work for free.
 - Credits are the ONE customer-facing unit. Per-request CREDIT cost, never dollars.
 - Usage rows are METADATA ONLY — never context text, field values, form contents,
-  or the fill plan. Enforced by the column set, not by policy.
+  or the fill plan. Site-author identifiers (`form_id`, key ids) ARE metadata
+  (decision 2026-09-06). Enforced by the column set, not by policy.
 - Console screens EXTEND `app/ui/primitives.tsx` and register new primitives in
   `/styleguide`. Never redefine a token, never fork a primitive.
 - The floor (9 credits) and the starter grant (500) are COUPLED. Changing either
