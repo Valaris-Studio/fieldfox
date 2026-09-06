@@ -1,5 +1,15 @@
 # @fieldfox/server
 
+## 0.5.0
+
+### Minor Changes
+
+- Resolve per-form policies dynamically: `createApp({ resolveFormPolicy })` receives `{ siteKey, formId }` for every keyed request admitted by the key, origin and request-limit checks, and may return `{ model }` to override the provider model for that call. A thrown lookup, an unusable model, or a model outside `modelAllowlist` refuses with `503 form_policy_unavailable` before token reservation, before composing middleware, and before the provider call. Anonymous requests and empty labels never reach the resolver. The exported `FormPolicyResolver` type describes the hook; the resolved model is readable as `fieldfoxModelOverride` in `fillMiddleware`.
+
+- Expose the parsed, validated `formId` to composing middleware as `c.get('fieldfoxFormId')`, so a compositor can attribute usage to the site author's form label without reparsing the request body.
+
+  - @fieldfox/shared@0.2.0
+
 ## 0.4.1
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # @fieldfox/widget
 
+## 0.3.0
+
+### Minor Changes
+
+- Emit one terminal `fieldfox:result` event per started fill (`bubbles: true`, `composed: true`) so a host page can observe the outcome of a fill without scraping the widget's shadow DOM. The `detail` is a `FieldFoxResult` with status `filled` (`filledCount`, `leftCount`), `refused` (`httpStatus`, optional `errorCode`, optional validated `signupUrl`), `error` (optional `httpStatus`, optional `errorCode`) or `aborted`. It never carries response bodies, balances, form context, field ids or values: it reports a fill outcome, not billing or submission.
+
+- The post-fill status strip reads "Filled N fields, left M unchanged. Review the form." instead of "Review, then submit the form." The widget never prescribes submission: a filled form may be a filter, a draft, or step one of many.
+
 ## 0.2.0
 
 ### Minor Changes
