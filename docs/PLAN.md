@@ -355,11 +355,3 @@ the integration card that owns it (INT-fill-flow or INT-pilot).
 7. **PII to the provider** (§1, §6) — form values + pasted images leave the
    browser; privacy-nothing-at-rest default + deployer GDPR obligations doc;
    image-downscale-vs-OCR tuning is an open empirical question.
-
-## 6. Local experiment continuation, 2026-09-04
-
-The [experiment decision map](EXPERIMENT.md) records later board decisions,
-including owned fixtures instead of external-app pilots, local gates instead
-of hosted CI, exact readback and the as-built driver contract in RESEARCH §9.15.
-This amendment preserves the anchors above. Local experimental acceptance
-does not close original cards or authorize main, publication or deployment.

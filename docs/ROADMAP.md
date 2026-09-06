@@ -6,11 +6,6 @@ that bills." Board cards cite it by section.
 
 Written 2026-07-27. The decisions in §1 are locked; the rest is sequencing.
 
-2026-09-04 continuation: [the local experiment decision map](EXPERIMENT.md)
-records later board amendments and branch-only acceptance. The initial status
-below is a dated snapshot, not current production evidence. Existing anchors
-remain stable.
-
 ## 0. Where we actually are
 
 Shipped and working: the widget (v1 + v1.1 drivers, 19.8 KB gzip of a 35 KB budget),
