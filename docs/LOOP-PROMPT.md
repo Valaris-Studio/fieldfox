@@ -57,33 +57,72 @@ happened twice (P2-4a, P2-6d) and both times it was the right call.
 
 Never commit credentials. Never add one repo as a remote of the other.
 
-## 2. State as of 2026-09-06
+## 2. State as of 2026-09-06 (post-landing)
 
-**Matías's integration branch is on origin in BOTH repos**
-(`codex/fieldfox-integration-20260905`, OSS tip 21c7f75, cloud tip a509a8c) and
-was reviewed 2026-09-06: gates reproduced, backend accepted, shell rejected. It
-lands in STAGES through cards `INT2 → INT3 → INT4 → INT5 → INT6 → INT7` (read
-the definition decision "MATIAS INTEGRATION BRANCH" and the verdict note on
-INT1). INT3 and INT7 are Sebastian's. **Do NOT re-implement P3-3, P3-4, P3-4a,
-P3-4b, P3-6, P3-7 or P2-7** — they are labelled `superseded` because the branch
-already contains them; INT6 closes them.
+**Matías's integration branch has LANDED on main in both repos**, in stages,
+with his merge commits and authorship preserved (definition decision "MATIAS
+INTEGRATION BRANCH"; verdict notes on INT1, INT4, INT5).
 
-Two decisions taken 2026-09-06 that the code on that branch already reflects:
-`form_id` on `usage_events` is site-author METADATA (accepted; the 001 comment
-and schema test get amended in INT4), and the widget status copy is
-"Review the form." (accepted).
+- **Public fieldfox** (main at `edb05eb`): merge `07d3357`, release `f02b67f`
+  = `@fieldfox/server@0.5.0` (resolveFormPolicy seam, fieldfoxFormId context
+  var) + `@fieldfox/widget@0.3.0` (`fieldfox:result` outcome event, "Review the
+  form." copy) + `@fieldfox/shared@0.2.0`, all PUBLISHED 2026-09-06 and verified
+  from the registry bytes. Then W-1: `637e501` fixes the IIFE failing to parse
+  on a host page with no charset declaration; `edb05eb` versions
+  `@fieldfox/widget@0.3.1`, which is on main but **NOT yet published** (card W-1
+  in Review, Sebastian runs the release).
+- **Private fieldfox-cloud** (main at `ebe776a`): merge `c435940`, INT4 fixes
+  through `65fd988` (migrations 002-005, OTP auth, account-scoped dashboard
+  SQL, atomic usage+ledger CTE, refund on transport failure, form_id metadata
+  decision enforced by the schema test), INT5 `18ca32a` (landing back on the
+  bare CDN snippet pinned to widget 0.3.0 with SRI from the CDN bytes, fetch
+  wrapper replaced by a `fieldfox:result` listener), `694a3c4` (docs rendered
+  from a NAMED public commit, no "experiment / local preview" copy), `ebe776a`
+  (one site_keys lookup per paid fill).
+
+Gates at those trees: OSS `pnpm verify` 490 tests + e2e 88/88; cloud
+`pnpm verify` 231 tests + e2e 10/10.
 
 **Hosted API LIVE**: `https://fieldfox-api-193585536439.us-central1.run.app`
-Cloud Run + Cloud SQL, project `valaris-microsaas`, `max-instances=1`. Doing real
-anonymous fills. Runbook: `docs/DEPLOY.md` in fieldfox-cloud.
+Cloud Run + Cloud SQL, project `valaris-microsaas`, `max-instances=1`. Still
+running the 0.4.1 image and doing real anonymous fills; the landed console,
+auth, and migrations are NOT deployed until INT7. Runbook: `docs/DEPLOY.md` in
+fieldfox-cloud.
 
-**Published 2026-09-06 (INT3)**: `@fieldfox/server@0.5.0`, `@fieldfox/widget@0.3.0`,
-`@fieldfox/shared@0.2.0`. Bytes verified from the registry: the widget carries
-`fieldfox:result`, the server carries `resolveFormPolicy`.
+**Board** (after INT6): 83 Done + 13 in Matías's `Done Matias`; Backlog holds
+P3-5, P4-3, P5-1, P5-1a/b/c, INT7 and three old `superseded` CLOUD-* cards;
+W-1 in Review; 7 of Matías's experiment cards remain pending in his own column
+and in Blocked. Those columns are his: do not move or delete his cards.
 
-**Board**: 70 Done + 13 in Matías's `Done Matias` column, INT1 in Review, INT2..INT7
-in Backlog, 7 originals `superseded`. Matías's experiment columns are his: do
-not move or delete his cards.
+**INT-era gotchas** (each one cost a session):
+- Build the console with `NEXT_PUBLIC_FIELDFOX_DEMO_ENDPOINT` set BEFORE running
+  the cloud e2e. The landing demo fills only because that variable points it at
+  the deployed URL; without it the demo fails at the network layer and the
+  failure looks like a widget bug.
+- The cloud e2e uses the **Google Chrome channel**, not bundled Chromium.
+- Cloud `pnpm test:e2e` needs the npm registry AND jsDelivr reachable: the
+  landing, result, dashboard and self-host-consumer flows load the published
+  CDN release. Offline, they fail before any assertion.
+- `form_id` on `usage_events` is site-author METADATA (decision 2026-09-06).
+  The schema test enumerates the permitted text columns explicitly; extend that
+  list only with another recorded decision.
+- The published widget (0.3.0 and 0.3.1) still compiles in the placeholder
+  `api.fieldfox.dev` endpoint. The bare snippet mounts from jsDelivr with SRI
+  intact but a visitor's fill fails at the network layer until P5-1 (domain
+  cutover + republish with `HOSTED_FILL_ENDPOINT` set). This is expected.
+- Console docs render the public repo at a named commit: run
+  `node scripts/sync-docs.mjs --commit <sha> --snapshot` in fieldfox-cloud and
+  commit `app/generated/docs.json`. A plain rebuild does NOT pick up a public
+  docs edit. The snapshot is at `e96bd51`, whose EMBEDDING.md still shows the
+  0.1.1 pin and "Not live yet"; fixing that is a public docs edit + re-snapshot.
+- `pnpm lint` in apps/console regenerates docs.json from the committed
+  snapshot, so no build is needed first. `createCloudApp` returns a wrapper
+  Hono: the request scope must open before the OSS routes.
+- After W-1 publishes: bump `WIDGET_VERSION` in
+  `apps/console/app/ui/landing/endpoint.ts` and regenerate `WIDGET_SRI` from the
+  CDN bytes (`curl -sL <src> | openssl dgst -sha384 -binary | openssl base64 -A`).
+  They are one pair of constants; landing.test.tsx, the e2e specs and the
+  self-host consumer's parity assertion all follow.
 
 Recently landed and worth knowing:
 - Size-scaled credits are live end to end (P2-6c/d/e). Reserve from the estimate,
@@ -115,10 +154,13 @@ service, a DB column) is missing. **Check the precondition, not the flag.**
 Move each card to In Progress before writing code. Land them ONE AT A TIME —
 committed, gated, card moved, note written — before starting the next.
 
-**Suggested order:** INT2 (OSS, autonomous) → stop for INT3 (Sebastian publishes
-0.5.0/0.3.0) → INT4 → INT5 → INT6 (all autonomous, cloud). Each INT card's
-precondition is a PUBLISHED version or a landed SHA — check `npm view` and
-`git log`, not `dependency_status`.
+**What is actually next:** (1) W-1 publish of `@fieldfox/widget@0.3.1`
+(Sebastian, TTY for 2FA; then the cloud pin bump described in §2). (2) INT7:
+deploy the landed console + auth + migrations 002-005 to Cloud Run (Sebastian;
+needs an SMTP provider decision). Then P3-5 (billing) and P4-3 (end-to-end
+acceptance) remain in Backlog, and P5-1 stays behind P5-1a/b/c. Each card's
+precondition is a PUBLISHED version or a DEPLOYED revision — check `npm view`,
+`git log` and `gcloud run services describe`, not `dependency_status`.
 
 ## 4. Method
 
