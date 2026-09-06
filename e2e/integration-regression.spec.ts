@@ -78,7 +78,8 @@ test('disconnect leaves the host unchanged after the local provider completes', 
   // Observe the actual browser request abort as well as upstream completion.
   // Then let the browser process the rejection before checking the final DOM.
   const terminated = await failedRequest;
-  expect(terminated.failure()?.errorText).toMatch(/ERR_ABORTED/);
+  // Chromium spells an aborted fetch net::ERR_ABORTED; WebKit spells it "cancelled".
+  expect(terminated.failure()?.errorText).toMatch(/ERR_ABORTED|^cancelled$/);
   console.info(`I0 browser request terminal: requestfailed ${terminated.failure()?.errorText}`);
   await expect.poll(async () => (await recorded())?.completedAt).toBeDefined();
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
