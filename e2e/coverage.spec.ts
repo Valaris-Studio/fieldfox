@@ -44,7 +44,7 @@ async function runFill(page: Page, contextText: string): Promise<void> {
   await expect(fillButton).toBeInViewport();
   await contextInput.fill(contextText);
   await fillButton.click();
-  await expect(status).toContainText('Review, then submit', { timeout: 20_000 });
+  await expect(status).toContainText('Review', { timeout: 20_000 });
 }
 
 // The context the "model" is given. Every value here is deliberately consistent

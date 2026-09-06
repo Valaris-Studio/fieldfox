@@ -1,6 +1,6 @@
 {
   "name": "@fieldfox/server",
-  "version": "0.4.1",
+  "version": "0.5.0-rc.20260905.1",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",

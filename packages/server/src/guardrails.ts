@@ -1,10 +1,12 @@
 import type { Context, MiddlewareHandler } from 'hono';
+import { FillRequest } from '@fieldfox/shared';
 import {
   ALLOWED_IMAGE_MIME,
   FREE_TIER_BUDGET_KEY,
   SITE_KEY_PREFIX,
   type AllowedImageMime,
   type GuardrailConfig,
+  type FormPolicy,
   type SiteKeyPolicy,
 } from './config.js';
 import type { RateBudgetStore } from './store.js';
@@ -19,6 +21,8 @@ declare module 'hono' {
     fieldfoxSiteKey: string;
     fieldfoxPolicy: SiteKeyPolicy;
     fieldfoxEstimatedTokens: number;
+    // Optional opaque label from the parsed request, never the form content.
+    fieldfoxFormId: string | undefined;
     // Resolved per-formId model override (config.formPolicies[formId].model), if
     // any. The fill handler passes it to the provider call in place of the
     // default model.
@@ -66,6 +70,11 @@ function inputKindsOf(contextChars: number, imageCount: number, documentCount: n
 // notion of accounts or credits belongs to whatever calls this, never here.
 export type SiteKeyResolver = (siteKey: string) => Promise<SiteKeyPolicy | undefined>;
 
+// Only called for an admitted keyed request with a validated opaque form label.
+// The composing deployment owns storage and account scoping. Undefined preserves
+// the static form policy; a returned model wins for this request only.
+export type FormPolicyResolver = (request: { siteKey: string; formId: string }) => Promise<FormPolicy | undefined>;
+
 // A policy is only usable if it carries the two fields every downstream check
 // reads. Deliberately structural rather than a zod parse: this runs per keyed
 // request, and the fields are few enough that the check stays obvious.
@@ -87,6 +96,7 @@ export interface GuardrailDeps {
   // Optional. Absent → the static config.siteKeys map is the sole authority,
   // exactly as before this seam existed.
   resolveSiteKey?: SiteKeyResolver;
+  resolveFormPolicy?: FormPolicyResolver;
   // Override only in tests that need a fixed client IP; production reads headers.
   clientIp?: (c: Context) => string;
 }
@@ -422,6 +432,27 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
       });
     }
 
+    // Resolve before reserving tokens or entering the composing middleware, so
+    // a policy lookup failure cannot charge a fill that never reached a provider.
+    const parsedFormId = FillRequest.shape.formId.safeParse(body.formId);
+    const validatedFormId = parsedFormId.success ? parsedFormId.data : undefined;
+    let dynamicPolicy: FormPolicy | undefined;
+    if (deps.resolveFormPolicy && presentedKey && validatedFormId) {
+      try {
+        dynamicPolicy = await deps.resolveFormPolicy({ siteKey, formId: validatedFormId });
+        if (dynamicPolicy !== undefined) {
+          if (typeof dynamicPolicy !== 'object' || dynamicPolicy === null ||
+              (dynamicPolicy.model !== undefined &&
+                (typeof dynamicPolicy.model !== 'string' || !dynamicPolicy.model.trim() ||
+                  (config.modelAllowlist && !config.modelAllowlist.includes(dynamicPolicy.model))))) {
+            throw new Error('unusable form policy');
+          }
+        }
+      } catch {
+        return c.json({ error: 'form_policy_unavailable', message: 'form policy is unavailable' }, 503);
+      }
+    }
+
     await store.chargeTokens(siteKey, estimatedTokens, policy.dailyTokenBudget);
 
     c.set('fieldfoxSiteKey', siteKey);
@@ -436,8 +467,9 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
     // an explicit per-formId policy still wins, since that is a deliberate
     // deployer choice rather than a lane default. The formId is an opaque token,
     // not user content, so it is safe in operational metadata.
+    if (validatedFormId) c.set('fieldfoxFormId', validatedFormId);
     const formId = typeof body.formId === 'string' ? body.formId : undefined;
-    const modelOverride = (formId ? config.formPolicies?.[formId]?.model : undefined) ?? freeModel;
+    const modelOverride = dynamicPolicy?.model ?? (formId ? config.formPolicies?.[formId]?.model : undefined) ?? freeModel;
     if (modelOverride) c.set('fieldfoxModelOverride', modelOverride);
 
     const fieldCount = Array.isArray(body.formSchema?.fields) ? body.formSchema!.fields!.length : 0;

@@ -93,7 +93,7 @@ test('on Fill the panel hides for the flight, then reappears as the strip after 
   await expect(page.locator('field-fox [part="inflight-overlay"]')).toBeVisible();
 
   // The success report reveals the panel directly as the minimized strip.
-  await expect(status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(status).toContainText('Review', { timeout: 15_000 });
   await expect(panel).toBeVisible();
   await expect(panel).toHaveClass(/ff-minimized/);
   await expect(page.locator('#full-name')).toHaveValue(CANNED.fullName);

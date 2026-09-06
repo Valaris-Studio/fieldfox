@@ -54,6 +54,9 @@ export const CANNED = {
 // every json_object attempt (initial + repair) with malformed JSON → server 502.
 export const FORCE_ERROR = 'FORCE_ERROR';
 
+// Provider transport simulation: close HTTP after headers and a partial body.
+export const FORCE_TRANSPORT_ERROR = 'FIELDFOX_SIMULATION_CUT_RESPONSE';
+
 // When contextText contains this, the mock only sets email + full-name, emits an
 // explicit `skip` for textareas, and OMITS every other field — the two
 // fill-or-leave shapes (explicit skip vs omission) in one plan.

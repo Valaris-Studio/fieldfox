@@ -2,9 +2,11 @@
 
 This guide is for frontend developers integrating the `<field-fox>` custom element into a page or app. To stand up the server the widget talks to, see [docs/SELF-HOSTING.md](SELF-HOSTING.md).
 
-The widget is a framework-agnostic custom element with zero runtime dependencies (~18KB gzip). Its entire UI lives in an open shadow root; it never wraps, moves, or injects into your form.
+The widget is a framework-agnostic custom element with zero runtime dependencies (under the 35KB gzip eager-bundle budget). Its entire UI lives in an open shadow root; it never wraps, moves, or injects into your form.
 
 ## Install
+
+For this unpublished branch, use [the exact local artifacts](LOCAL-ARTIFACTS.md). The historical CDN example below does not include this branch's result event. The local console loads its identified artifact and copies an explicit endpoint with the same bytes and hash. Public release instructions remain separate.
 
 ### CDN + SRI (recommended for HTML pages)
 
@@ -145,7 +147,7 @@ Adjustment mode is for integration and development only — it should **not** sh
 2. The panel has a textarea for context and an attachment drop zone (drop, paste, or pick files).
 3. The panel is **draggable** by its header, clamped to the viewport. It has an **×** close button, and Escape closes it.
 4. Pressing **Fill form** hides the panel for the duration of the request; an animated border tracer circles the form to signal progress.
-5. On **success**, the panel returns as a minimized status strip docked clear of the form ("Filled 3 fields, left 1 unchanged. Review, then submit the form."), so the freshly filled fields are visible for review. Click the strip to re-expand.
+5. On **success**, the panel returns as a minimized status strip docked clear of the form ("Filled 3 fields, left 1 unchanged. Review the form."), so the freshly filled fields are visible for review. Click the strip to re-expand.
 6. On **error**, the panel returns expanded and focused, showing the error so the user can retry.
 
 The panel's drag position resets when it closes; a fresh open re-anchors near the form.
@@ -262,3 +264,32 @@ The widget makes no external network calls beyond your fill endpoint, and loads 
 ## Wire contract
 
 The current wire contract is `schemaVersion = 4`, defined as a zod schema in `packages/shared`. If you pin an older widget version whose major the server no longer serves, the server refuses with `426 schema_version_unsupported` and the widget shows an "out of date — the site needs to update its snippet" message. Keeping the embedded widget version current avoids this; see the version-skew section of [docs/SELF-HOSTING.md](SELF-HOSTING.md#version-skew-and-upgrades).
+
+## Fill outcome event
+
+This branch adds `fieldfox:result`; the historical 0.1.1 CDN snippet above does not expose it. Consume a build containing this change. Hosted and self-hosted endpoints use exactly the same event and widget.
+
+Listen on the `<field-fox>` element. It dispatches one terminal `CustomEvent<FieldFoxResult>` for each started fill, with `bubbles: true` and `composed: true`. A document listener can observe connected widgets across enclosing shadow roots. Use `event.composedPath()` to identify the widget when shadow retargeting applies. After a widget is removed, only listeners on the detached element or its remaining ancestors can receive its abort; a detached node cannot bubble to document.
+
+```ts
+import type { FieldFoxResult } from '@fieldfox/widget';
+const widget = document.querySelector('field-fox')!;
+widget.addEventListener('fieldfox:result', (event) => {
+  const result = (event as CustomEvent<FieldFoxResult>).detail;
+  if (result.status === 'filled') {
+    console.log(result.filledCount, result.leftCount);
+  }
+  // Review the fields. Submission remains a separate human action.
+});
+```
+
+| status | Other properties | Meaning |
+| --- | --- | --- |
+| filled | filledCount, leftCount | The executor finished. Counts come from confirmed readbacks and attempted writes left unchanged. Skipped or omitted fields are not attempted writes. Both counts may be zero. |
+| refused | httpStatus, optional errorCode, optional signupUrl | The server returned 4xx. A validated HTTP(S) signupUrl is exposed only for free_allowance_exhausted. |
+| error | optional httpStatus, optional errorCode | Network, malformed response, server 5xx, or application failure. |
+| aborted | None | Supersession, disconnect, or rebinding cancelled the operation. No later success or error is emitted for that operation. |
+
+The machine code is emitted only when it matches `[a-z][a-z0-9_]{0,63}`. Response bodies, account state, balances, credit amounts, form context, field IDs and values are never copied into the event. The event reports a fill outcome, not billing or form submission.
+
+Notifications run in a microtask after synchronous widget cleanup, so a listener may safely initiate another fill. An abort can occur after earlier fields were confirmed; it is not a transactional rollback and deliberately carries no zero-filled claim. The executor stops further writes and restores an unconfirmed in-progress field. The standalone exhaustion offer and self-hosting link remain in the widget.

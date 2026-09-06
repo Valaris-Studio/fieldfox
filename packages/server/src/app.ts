@@ -3,7 +3,7 @@ import { createFillHandler } from './fill.js';
 import type { ChatCompletion } from './llm.js';
 import { loadConfig, type GuardrailConfig } from './config.js';
 import { InMemoryStore, type RateBudgetStore } from './store.js';
-import { guardrails, type SiteKeyResolver } from './guardrails.js';
+import { guardrails, type SiteKeyResolver, type FormPolicyResolver } from './guardrails.js';
 import type { MetaLogger } from './log.js';
 
 // Headers the widget always sends on the POST; the floor even when a client
@@ -42,6 +42,9 @@ export interface AppOptions {
   // the boot-time config.siteKeys map, so creating or revoking a key takes
   // effect without a redeploy. Omitted → the static map is the sole authority.
   resolveSiteKey?: SiteKeyResolver;
+  // Per-request model selection from the deployer's own store. Runs only after
+  // key/origin/limits admission, for a validated formId; never for anonymous fills.
+  resolveFormPolicy?: FormPolicyResolver;
   logger?: MetaLogger;
   // Middleware for requests the guardrails ACCEPTED, run before the provider
   // call: own-quota enforcement, audit logging, cost attribution. It sees the
@@ -93,6 +96,7 @@ export function createApp(options: AppOptions = {}): Hono {
       config: getConfig(),
       store,
       resolveSiteKey: options.resolveSiteKey,
+      resolveFormPolicy: options.resolveFormPolicy,
       logger: options.logger,
     })(c, next),
   );

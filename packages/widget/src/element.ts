@@ -6,6 +6,7 @@ import { requestFill, FillRequestError } from './client.js';
 import { applyFillPlan, type FillReport } from './fill.js';
 import { startInflightEffect } from './effects.js';
 import { createAdjustMode, type AdjustHandle } from './adjust.js';
+import type { FieldFoxResult } from './result.js';
 
 // <field-fox> — the mount point. It never wraps, moves, or injects children into
 // the host form (RESEARCH §4); its own UI lives entirely in an OPEN shadow root.
@@ -414,6 +415,19 @@ export class FieldFoxElement extends HTMLElement {
 
     const controller = new AbortController();
     this.inflight = controller;
+    let terminal = false;
+    const finish = (result: FieldFoxResult): void => {
+      if (terminal) return;
+      terminal = true;
+      controller.signal.removeEventListener('abort', onAbort);
+      // Deliver after synchronous cleanup. A host listener may immediately start
+      // another fill, including while abortFill is superseding this request.
+      queueMicrotask(() => this.dispatchEvent(new CustomEvent<FieldFoxResult>('fieldfox:result', {
+        detail: result, bubbles: true, composed: true,
+      })));
+    };
+    const onAbort = (): void => finish({ status: 'aborted' });
+    controller.signal.addEventListener('abort', onAbort, { once: true });
     // Adjust overlays are noise under the tracer (fields are disabled/dimmed): hide
     // them for the flight and restore on settle if the mode is still active.
     this.adjustMode?.hideForFlight();
@@ -444,6 +458,7 @@ export class FieldFoxElement extends HTMLElement {
       if (controller.signal.aborted) return;
       this.settleFill();
       panel.showStatus(summarize(report));
+      finish({ status: 'filled', filledCount: report.filled.length, leftCount: report.left.length });
     } catch (error) {
       if (controller.signal.aborted) return; // a newer request/teardown owns cleanup
       this.settleFill();
@@ -459,6 +474,16 @@ export class FieldFoxElement extends HTMLElement {
         });
       }
       else panel.showError(errorMessageFor(error));
+      const httpStatus = error instanceof FillRequestError ? error.status : undefined;
+      const errorCode = error instanceof FillRequestError && /^[a-z][a-z0-9_]{0,63}$/.test(error.errorCode ?? '')
+        ? error.errorCode : undefined;
+      const reason = { ...(errorCode && { errorCode }) };
+      if (httpStatus !== undefined && httpStatus >= 400 && httpStatus < 500) {
+        finish({ status: 'refused', httpStatus, ...reason,
+          ...(offer?.signupUrl && { signupUrl: offer.signupUrl }) });
+      } else {
+        finish({ status: 'error', ...(httpStatus !== undefined && { httpStatus }), ...reason });
+      }
     }
   }
 
@@ -564,7 +589,7 @@ function summarize(report: FillReport): string {
   if (filled === 0 && left === 0) return 'No fields to fill.';
   const parts = [`Filled ${filled} field${filled === 1 ? '' : 's'}`];
   if (left > 0) parts.push(`left ${left} unchanged`);
-  return `${parts.join(', ')}. Review, then submit the form.`;
+  return `${parts.join(', ')}. Review the form.`;
 }
 
 // customElements.define throws on a duplicate name OR a re-used constructor; two

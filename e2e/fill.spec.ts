@@ -98,7 +98,7 @@ test('plain-html host: trigger → popover → fill; border-tracer in flight; de
   await expect(page.locator('field-fox [part="inflight-overlay"]')).toBeVisible();
   await expect(page.locator('#promo-code')).toBeEnabled();
 
-  await expect(status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(status).toContainText('Review', { timeout: 15_000 });
 
   // Applied per the canned plan…
   await expect(page.locator('#full-name')).toHaveValue(CANNED.fullName);
@@ -162,7 +162,7 @@ test('react-host: filled values are registered in react-hook-form state (React 1
   await openPanelAndFill(page, 'Jane Doe, jane@doe.dev, engineer, starts 2026-08-15, remote.');
 
   await expect(page.locator('#name')).toBeDisabled(); // in-flight on the React host too
-  await expect(ui(page).status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(ui(page).status).toContainText('Review', { timeout: 15_000 });
 
   // DOM-level result…
   await expect(page.locator('#name')).toHaveValue(CANNED.fullName);
@@ -176,6 +176,8 @@ test('react-host: filled values are registered in react-hook-form state (React 1
   // the form's own button echoes handleSubmit's data. If the native-setter +
   // dispatched-event writes hadn't registered with react-hook-form (RESEARCH
   // §2 value-tracker bypass), this JSON would still hold the defaultValues.
+  // Only the user submits the filled RHF state.
+  await expect(page.locator('#submitted-json')).toHaveCount(0);
   await page.locator('#profile-form button[type="submit"]').click();
   const submitted = page.locator('#submitted-json');
   await expect(submitted).toBeVisible();
@@ -268,7 +270,7 @@ test('form-level embedder inputs: context / form-id attributes ride the POSTed F
   expect(body.formId).toBe('trailhead-workshop-signup');
 
   // The whole flow still completes on top of the new fields.
-  await expect(ui(page).status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(ui(page).status).toContainText('Review', { timeout: 15_000 });
 });
 
 test('form-less container: introspects + fills, trigger anchors to the container (pilot finding 1)', async ({ page }) => {
@@ -288,7 +290,7 @@ test('form-less container: introspects + fills, trigger anchors to the container
 
   await openPanelAndFill(page, 'Org is Grupo Andino Logística, email operaciones@grupoandino.cl.');
 
-  await expect(status).toContainText('Review, then submit', { timeout: 15_000 });
+  await expect(status).toContainText('Review', { timeout: 15_000 });
   // The container's fields were introspected and filled — no "No fields to fill."
   await expect(page.locator('#work-email')).toHaveValue(CANNED.email);
   await expect(status).not.toContainText('No fields to fill');

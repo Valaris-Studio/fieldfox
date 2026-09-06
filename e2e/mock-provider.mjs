@@ -19,12 +19,13 @@
 
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
-import { CANNED, FORCE_ERROR, SKIP_AND_OMIT } from './canned.mjs';
+import { CANNED, FORCE_ERROR, FORCE_TRANSPORT_ERROR, SKIP_AND_OMIT } from './canned.mjs';
+import { PRODUCT_SAMPLE } from './product-sample.mjs';
 
 const MAX_RECORDED = 200;
 
 /** @returns {Promise<import('node:http').Server>} */
-export function startMockProvider(port) {
+export function startMockProvider(port, host) {
   // Artificial response latency so the specs can observe the in-flight state
   // (fields disabled + shimmer) before the plan lands. Read here, not at module
   // scope: e2e-env.mjs sets the env AFTER its (hoisted) import of this module.
@@ -53,14 +54,29 @@ export function startMockProvider(port) {
 
         const prompt = promptTextOf(body.messages ?? []);
         const responseFormat = body.response_format?.type ?? 'none';
-        requests.push({ at: new Date().toISOString(), model: body.model, responseFormat, prompt });
+        const recorded = { at: new Date().toISOString(), model: body.model, responseFormat, prompt };
+        requests.push(recorded);
         if (requests.length > MAX_RECORDED) requests.shift();
 
         const respond = (status, payload) =>
           setTimeout(() => {
             res.writeHead(status, { 'content-type': 'application/json' });
             res.end(JSON.stringify(payload));
+            recorded.completedAt = new Date().toISOString();
           }, DELAY_MS);
+
+        if (prompt.includes(FORCE_TRANSPORT_ERROR)) {
+          // Transport failure, not malformed model content: advertise a longer
+          // HTTP body, send only its beginning, then close the TCP connection.
+          recorded.fault = 'truncated-http-body';
+          res.writeHead(200, { 'content-type': 'application/json', 'content-length': '1024' });
+          res.write('{"choices":[');
+          setTimeout(() => {
+            recorded.transportClosed = true;
+            res.destroy();
+          }, DELAY_MS);
+          return;
+        }
 
         if (prompt.includes(FORCE_ERROR)) {
           // Rung 1: pretend strict json_schema is unsupported (HTTP 400 →
@@ -74,7 +90,11 @@ export function startMockProvider(port) {
         }
 
         const fields = parseFields(prompt);
-        const fills = prompt.includes(SKIP_AND_OMIT) ? skipAndOmitFills(fields) : cannedFills(fields);
+        const fills = fields.some(field => field.name === 'product-name')
+          ? fields.filter(field => field.fillable).map(field =>
+              Object.hasOwn(PRODUCT_SAMPLE.values, field.name)
+                ? set(field.id, PRODUCT_SAMPLE.values[field.name]) : skip(field.id))
+          : prompt.includes(SKIP_AND_OMIT) ? skipAndOmitFills(fields) : cannedFills(fields);
         return respond(200, envelope(body.model, JSON.stringify({ fills })));
       });
       return;
@@ -86,7 +106,7 @@ export function startMockProvider(port) {
 
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, () => {
+    server.listen(port, host, () => {
       console.log(`[mock-llm] OpenAI-compatible mock on http://127.0.0.1:${port} (delay ${DELAY_MS}ms)`);
       resolve(server);
     });
