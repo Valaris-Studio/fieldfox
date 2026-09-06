@@ -124,7 +124,7 @@ const PANEL_STYLES = `
 }
 .ff-panel[popover] { inset: unset; }
 /* Header row: the title doubles as the drag handle (RESEARCH: no separate chrome
-   — the panel is intentionally minimal) and the minimal × close button sits at
+   - the panel is intentionally minimal) and the minimal close glyph sits at
    its right. grab/grabbing signal draggability; user-select:none stops the
    pointerdown from starting a text selection mid-drag. touch-action:none lets
    pointermove fire on touch without the browser claiming the gesture to scroll.
@@ -146,7 +146,7 @@ const PANEL_STYLES = `
   background-size: 6px 6px;
 }
 .ff-panel.ff-dragging .ff-title { cursor: grabbing; }
-/* A minimized strip is click-to-expand, so its header is not a drag handle —
+/* A minimized strip is click-to-expand, so its header is not a drag handle:
    no grab cursor, no drag-affordance dots. */
 .ff-panel.ff-minimized .ff-title { cursor: pointer; background-image: none; }
 /* Minimal chromeless close: no background/border, just the glyph with a subtle
@@ -191,7 +191,7 @@ const PANEL_STYLES = `
   padding: 0; border: 0; border-radius: 0 0 0 4px;
   background: rgba(0,0,0,0.6); color: #fff; cursor: pointer; font-size: 13px;
 }
-/* Document attachment chips — filename + remove control, mirroring the image
+/* Document attachment chips: filename + remove control, mirroring the image
    thumbs' interaction but laid out as text rows since a PDF/text file has no
    preview image. */
 .ff-chips { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
@@ -231,7 +231,7 @@ const PANEL_STYLES = `
 .ff-panel.ff-minimized .ff-status { margin-top: 4px; }
 /* Hidden-during-flight state: the panel disappears entirely while the fill is on
    the wire (the border-tracer on the form communicates progress). It is hidden,
-   not closed — the fill flow keeps driving it, and success/error reveal it again. */
+   not closed: the fill flow keeps driving it, and success/error reveal it again. */
 .ff-panel.ff-hidden { display: none; }
 .ff-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .ff-fill {

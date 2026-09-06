@@ -728,12 +728,16 @@ function accessibleName(el: Element): string {
 }
 
 // Case-folded, diacritic-stripped, whitespace-collapsed. NFD splits "é" into
-// "e" + U+0301 so the combining-mark range can be dropped wholesale.
+// "e" + U+0301 so the combining-mark range U+0300-U+036F can be dropped
+// wholesale. The range is written as escapes: a raw endpoint reaches the
+// bundle as multi-byte UTF-8, and a host page with no charset decodes it as two
+// characters, which makes the regex literal invalid and the whole IIFE fail to
+// parse (W-1).
 function normalize(value: string): string {
   return collapse(value)
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
+    .replace(/[\u0300-\u036f]/g, '');
 }
 
 function collapse(value: string): string {

@@ -178,7 +178,11 @@ function normalizeForConfirm(value: string): string {
     .trim()
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
+    // Combining marks U+0300-U+036F, written as escapes: a raw range endpoint
+    // reaches the bundle as multi-byte UTF-8, and a host page with no charset
+    // decodes it as two characters, which makes the regex literal invalid and
+    // the whole IIFE fail to parse (W-1).
+    .replace(/[\u0300-\u036f]/g, '');
 }
 
 // --- text / textarea / email / tel / url / number / date / … ----------------

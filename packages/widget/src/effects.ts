@@ -214,12 +214,12 @@ const TRACER_CSS = `
   mask-composite: exclude;
 }
 
-/* The spinning wheel: a comet — long faint tail rising through the brand orange
+/* The spinning wheel: a comet, a long faint tail rising through the brand orange
    to a saturated warm-orange head, sharp cutoff past the head so it reads as a
    light LEADING clockwise around the border. Stop angles are strictly increasing
    (conic stops never wrap past 360; out-of-order stops clamp and flatten the
    arc). 250%-sized and centered so no rotation angle of the rectangular wheel
-   exposes a bare corner of the band (200% is marginal on tall forms —
+   exposes a bare corner of the band (200% is marginal on tall forms:
    half-diagonal exceeds the inscribed radius). */
 .ff-tracer-ring::before {
   content: '';
@@ -249,7 +249,7 @@ const TRACER_CSS = `
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* No travel. Hide the wheel and paint the masked frame directly — a static
+  /* No travel. Hide the wheel and paint the masked frame directly: a static
      accent edge, band-only, no tint on the form interior, no motion. Still
      reads as "working". */
   .ff-tracer-ring::before { display: none; }

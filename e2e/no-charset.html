@@ -1,0 +1,26 @@
+<!doctype html>
+<!--
+  W-1 fixture: a host page that declares NO character encoding. No meta charset
+  here, and charset.spec.ts serves it (and the widget bundle) with a
+  Content-Type that carries no charset either, so the browser falls back to its
+  locale default (windows-1252) and decodes the script with it. This file must
+  stay pure ASCII: the point is that the PAGE is innocent and the widget still
+  has to load.
+-->
+<html lang="en">
+  <head>
+    <title>No charset host</title>
+  </head>
+  <body>
+    <form id="contact-form">
+      <label for="full-name">Full name</label>
+      <input id="full-name" name="full-name" type="text" />
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" />
+      <button type="submit">Send</button>
+    </form>
+
+    <script src="./fieldfox.js"></script>
+    <field-fox target="#contact-form"></field-fox>
+  </body>
+</html>

@@ -540,6 +540,49 @@ test('combobox driver matches diacritic-insensitively', async () => {
   expect(report.filled).toContain('ff-0');
 });
 
+// W-1 pins the normaliser's behaviour across the switch from a raw combining-mark
+// range to \u escapes: the SAME writing of an option still matches through case,
+// diacritics and whitespace, and nothing else got looser.
+test('accented options match their unaccented, differently-cased, re-spaced spellings', async () => {
+  const cases: Array<[planned: string, committed: string]> = [
+    ['Sao Paulo', 'São Paulo'],
+    ['SAO PAULO', 'São Paulo'],
+    ['  sao   paulo ', 'São Paulo'],
+    ['Zurich', 'Zürich'],
+    ['ZURICH', 'Zürich'],
+    ['geneve', 'Genève'],
+    ['Genève', 'Genève'],
+  ];
+  for (const [planned, committed] of cases) {
+    mountCombobox({ options: ['São Paulo', 'Zürich', 'Genève'] });
+
+    const report = await applyFillPlan(
+      plan({ fieldId: 'ff-0', action: 'set', value: planned }),
+      resolveById({ 'ff-0': '#trigger' }),
+    );
+
+    expect(committedText(), planned).toBe(committed);
+    expect(report.filled, planned).toContain('ff-0');
+  }
+});
+
+// Diacritic folding is not a licence to guess: a substring or a near-miss of an
+// accented option is left, exactly as it is for plain ASCII options.
+test('a substring or near-miss of an accented option never matches', async () => {
+  for (const planned of ['Paulo', 'São', 'Sao Paul', 'Zurich Nord', 'Zuerich']) {
+    mountCombobox({ options: ['São Paulo', 'Zürich', 'Genève'], current: 'Genève' });
+
+    const report = await applyFillPlan(
+      plan({ fieldId: 'ff-0', action: 'set', value: planned }),
+      resolveById({ 'ff-0': '#trigger' }),
+    );
+
+    expect(committedText(), planned).toBe('Genève');
+    expect(report.filled, planned).toHaveLength(0);
+    expect(report.left[0], planned).toMatchObject({ fieldId: 'ff-0', reason: 'no-matching-option' });
+  }
+});
+
 test('combobox driver matches on collapsed whitespace', async () => {
   mountCombobox({ options: ['In  Progress', 'Done'] });
 

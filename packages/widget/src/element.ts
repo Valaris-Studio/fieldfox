@@ -60,7 +60,7 @@ const STYLES = `
 :host {
   all: initial;
   /* Explicit resets so host-page inherited props don't bleed in and the widget
-     doesn't bleed out (RESEARCH §4). all:initial handles most; these pin the
+     doesn't bleed out (RESEARCH section 4). all:initial handles most; these pin the
      text rendering the trigger relies on. */
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   color: inherit;

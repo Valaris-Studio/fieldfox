@@ -46,6 +46,15 @@ export default defineConfig({
     __WIDGET_VERSION__: JSON.stringify(pkgVersion),
     __HOSTED_FILL_ENDPOINT__: JSON.stringify(resolveHostedFillEndpoint()),
   },
+  // The bundle must be pure ASCII (W-1): the IIFE is decoded with the HOST
+  // page's encoding, and a page with no charset declaration decodes a raw
+  // multi-byte character as two or three, which turns a regex range into a parse
+  // error for the whole script. Vite defaults esbuild to utf8 output, under
+  // which even a `\u00d7` written in source is re-emitted as a raw byte; ascii
+  // makes esbuild escape every non-ASCII string and template character at build
+  // time. Regex literals are printed verbatim, so their ranges are escaped in
+  // source. scripts/check-bundle-size.mjs is the gate that holds this true.
+  esbuild: { charset: 'ascii' },
   build: {
     lib: {
       entry: 'src/index.ts',

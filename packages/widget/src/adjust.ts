@@ -42,8 +42,8 @@ export interface AdjustHandle {
 }
 
 const STYLES = `
-/* Adjust toggle: same chromeless footprint as the bare fox trigger — transparent
-   box, small monochrome glyph — but quiet at rest and accent-lit when active. */
+/* Adjust toggle: same chromeless footprint as the bare fox trigger (transparent
+   box, small monochrome glyph) but quiet at rest and accent-lit when active. */
 .ff-adjust-toggle {
   position: fixed;
   z-index: 2147483646;
