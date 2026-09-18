@@ -1,0 +1,144 @@
+{
+  "title": "FieldFox — a tiny field laboratory",
+  "version": 1,
+  "purpose": "Reusable editorial and scrollytelling resources for design review; not a launched product website.",
+  "availabilityAsOf": "2026-09-18",
+  "lead": "From the information you have to the form you need.",
+  "visualMetaphor": "A friendly tabletop sorting device, annotated like an engineering drawing. The device stands for the whole workflow, never an on-device AI claim.",
+  "chapters": [
+    {
+      "id": "gather",
+      "number": "01",
+      "label": "Gather",
+      "headline": "Bring the bits you already have.",
+      "body": "A message. A labelled photo. A supplier sheet. Give FieldFox the source beside the form you already use.",
+      "technical": "Text and images are supported inputs. Enable document attachments with accept-documents; extraction depends on the chosen model.",
+      "motion": "A folded source sheet and two small information tiles settle into the intake tray. Keep the source visible throughout.",
+      "alt": "A source sheet with a product SKU, material and dimensions sits beside an empty product form.",
+      "claims": [
+        "inputs",
+        "existing-form"
+      ]
+    },
+    {
+      "id": "map",
+      "number": "02",
+      "label": "Map",
+      "headline": "Meet the little boxes.",
+      "body": "FieldFox reads your form’s labels and supported controls. You can add hints and mark a field hands-off.",
+      "technical": "The widget builds a form schema. data-ff-ignore excludes a field or subtree from introspection and filling.",
+      "motion": "A cobalt frame follows each supported field; a dotted boundary steps around the manual-note field.",
+      "alt": "The form becomes a labelled map. A separate internal-note field stays outside the map.",
+      "claims": [
+        "schema",
+        "ignore"
+      ]
+    },
+    {
+      "id": "propose",
+      "number": "03",
+      "label": "Propose",
+      "headline": "Ask for a plan.",
+      "body": "The source and the form map travel to your configured server and model provider. The model proposes where the information belongs.",
+      "technical": "Browser → FieldFox server → compatible provider. Site-author guidance is separated from source content; the server validates the proposed fill plan.",
+      "motion": "One visible packet crosses the browser boundary, enters the server, reaches the provider and returns through the plan-validation gate.",
+      "alt": "Source and schema leave the browser for the server and model provider. A proposed plan returns to the server for validation.",
+      "claims": [
+        "data-route",
+        "prompt-lanes",
+        "plan-validation"
+      ]
+    },
+    {
+      "id": "check",
+      "number": "04",
+      "label": "Check",
+      "headline": "Did it land in the box?",
+      "body": "FieldFox applies supported values, then reads the fields back. That checks the write—not whether the source was understood correctly.",
+      "technical": "Skipped and omitted fields stay as they were. A failed confirmation triggers a restore attempt for that field. Cancellation is not an all-or-nothing rollback.",
+      "motion": "Three value tiles settle into matching fields. A small readback loop visits each field. Weight remains empty; the manual note does not move.",
+      "alt": "SKU, material and dimensions are filled, then read back. Weight remains empty and the excluded manual note is preserved.",
+      "claims": [
+        "apply",
+        "readback",
+        "skip",
+        "cancellation"
+      ]
+    },
+    {
+      "id": "review",
+      "number": "05",
+      "label": "Review",
+      "headline": "Your eyes. Your next move.",
+      "body": "Compare the filled values with the source. Correct what needs correcting. FieldFox never submits the form.",
+      "technical": "The widget reports its result. Your application keeps its own validation and submission flow. A readback match is not factual proof.",
+      "motion": "The camera eases back to show the source and filled form side by side. A human review marker arrives; no submit animation plays.",
+      "alt": "A person compares the source with the filled form, edits a value and retains control of the next action.",
+      "claims": [
+        "human-review",
+        "never-submit",
+        "readback"
+      ]
+    },
+    {
+      "id": "choose-hosting",
+      "number": "06",
+      "label": "Choose a home",
+      "headline": "One fox. Two homes.",
+      "body": "Cloud is the planned easy starting point. Or run the MIT widget and server yourself, with a compatible model provider.",
+      "technical": "Cloud is pre-launch: a free first fill before signup is the intended experience. Self-hosting is available for evaluation. The widget and fill engine are shared.",
+      "motion": "The same little fox device stays centered while two infrastructure trays slide into view: planned Cloud and self-hosted evaluation.",
+      "alt": "An identical FieldFox widget connects to either pre-launch Cloud or a self-hosted server. Both use a configured model provider.",
+      "claims": [
+        "hosting",
+        "availability",
+        "provider-costs"
+      ]
+    }
+  ],
+  "example": {
+    "label": "Illustrative product card; values are invented, not an extraction benchmark.",
+    "sourceText": "Little stool. SKU STOOL-014. Material: wood. Width: 32 cm. Depth: 32 cm. Height: 45 cm.",
+    "fields": [
+      {
+        "label": "SKU",
+        "value": "STOOL-014",
+        "state": "proposed"
+      },
+      {
+        "label": "Material",
+        "value": "Wood",
+        "state": "proposed"
+      },
+      {
+        "label": "Dimensions",
+        "value": "32 × 32 × 45 cm",
+        "state": "proposed"
+      },
+      {
+        "label": "Weight",
+        "value": "",
+        "state": "omitted",
+        "reason": "Not stated in this illustrative source."
+      },
+      {
+        "label": "Internal note",
+        "value": "Check finish with supplier.",
+        "state": "excluded",
+        "reason": "data-ff-ignore; entered manually."
+      }
+    ]
+  },
+  "diagramFiles": [
+    "source-to-form.svg",
+    "trust-boundaries.svg",
+    "same-widget-two-homes.svg"
+  ],
+  "motionRules": [
+    "The source, outbound request and human review must remain understandable without animation.",
+    "Reduced motion uses the same chapter order with static states; no forced camera travel.",
+    "Never animate a submit, guaranteed accuracy badge, private/local processing claim, or security certification.",
+    "Do not animate a skipped field as a failed fact check; the distinction is whether a write was attempted."
+  ],
+  "sourceIndex": "claims-and-sources.md"
+}

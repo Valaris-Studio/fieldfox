@@ -1,0 +1,45 @@
+.field-lab {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 340px;
+  isolation: isolate;
+}
+.field-lab canvas {
+  display: block;
+  touch-action: pan-y;
+}
+.field-lab-fallback {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  place-items: center;
+  align-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 340px;
+}
+.field-lab-fallback img {
+  display: block;
+  width: 95%;
+  min-width: 0;
+  height: auto;
+  max-width: 100%;
+  max-height: 560px;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+}
+.field-lab-fallback span {
+  margin-top: 12px;
+  font:
+    11px/1.5 ui-monospace,
+    SFMono-Regular,
+    monospace;
+  color: #5e6359;
+}
+@media (max-width: 600px) {
+  .field-lab,
+  .field-lab-fallback {
+    min-height: 300px;
+  }
+}
