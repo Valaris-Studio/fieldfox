@@ -278,3 +278,17 @@ test('pre-read dynamic lookup failure preserves byte, JSON and version refusal p
   expect((await post(limited)).status).toBe(413);
   expect(caller).not.toHaveBeenCalled();
 });
+
+test.each(['absent', 'empty string', 'empty stream'])('an %s JSON body retains the invalid_json refusal', async (kind) => {
+  const caller = vi.fn(async () => plan);
+  const app = createApp({ config: config(), llmCaller: caller, logger });
+  const payload = kind === 'empty stream'
+    ? new ReadableStream({ start(controller) { controller.close(); } })
+    : kind === 'empty string' ? '' : undefined;
+  const response = await app.fetch(new Request('http://localhost/api/fill', {
+    method: 'POST', headers, body: payload, duplex: 'half',
+  } as RequestInit));
+  expect(response.status).toBe(400);
+  expect((await response.json()).error).toBe('invalid_json');
+  expect(caller).not.toHaveBeenCalled();
+});

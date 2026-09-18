@@ -66,7 +66,7 @@ export function requestLimits(
       const bytes = await readBoundedBody(c.req.raw, config.maxBodyBytes, controller.signal);
       // Rebuild only after the bounded read. Hono owns caching from this point,
       // preserving json()/text() for guardrails and composing middleware.
-      c.req.raw = new Request(c.req.raw, { body: bytes.byteLength ? bytes : null });
+      c.req.raw = new Request(c.req.raw, { body: c.req.raw.body ? bytes : null });
       await next();
     } catch (error) {
       const cancelled = cancellationResponse(c);
