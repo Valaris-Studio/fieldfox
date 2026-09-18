@@ -1,5 +1,10 @@
 # Fieldfox session prompt
 
+> **Historical session template.** Since the September 18, 2026 takeover, the
+> current session protocol, priorities, and handoff live in Backplane. Start from
+> [AGENTS.md](../AGENTS.md), the board definition, and the latest pinned handoff.
+> The instructions and status snapshots below must not override that context.
+
 Paste the block below into a fresh Claude Code session in this repo — on its own for
 a single working block, or after `/loop` to repeat it.
 

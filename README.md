@@ -1,184 +1,214 @@
-# Fieldfox
+<div align="center">
 
-Fieldfox is a `<field-fox>` web component that fills any web form from free text, pasted or uploaded images, and attached documents. The widget introspects the target form, sends its schema plus the user's context to a server that holds the LLM credentials, and applies the returned plan — filling each field or leaving it exactly as it was. It never submits the form.
+# 🦊 FieldFox
 
-Run it two ways. The widget is **identical** in both; the only difference is which endpoint it points at and whether that endpoint meters.
+**From the information you have to the form you need.**
 
-| | [Hosted](#hosted-not-live-yet) | [Self-hosted](#self-hosted-works-today) |
-|---|---|---|
-| **Status** | Not live yet — in progress | **Available now** |
-| Setup | Paste one snippet | Run the server with your own provider key |
-| Account / API key | None to start | None — it's your infrastructure |
-| LLM credentials | Ours | Yours |
-| Metering | Free allowance, then credits | None |
-| License | — | MIT, same stack |
+Turn messages, images, and documents into reviewable form fills.<br />
+An embeddable web component for the forms you already built.
 
-Self-hosting is **permanently supported**, not a trial mode. Open source here is a real commitment: hosted-only capability lives in the server, never behind a feature flag in the widget, and the OSS server is the same server we run.
+**MIT licensed · Framework agnostic · Zero runtime dependencies in the widget**
 
-- **Framework-agnostic custom element** — drop the `<field-fox>` tag onto any HTML/JS/CSS page; it works with React, Vue, plain HTML, and forms inside a native `<dialog>`.
-- **Zero runtime dependencies, ~18KB gzip** — the widget ships as a self-registering IIFE (script tag) or ESM module. Its UI lives entirely in an open shadow root and never wraps, moves, or injects into your form.
-- **Text, image, and document input** — paste an email or a photo of a business card; behind an opt-in flag, attach PDFs and text files.
-- **Design-system widgets, not just native inputs** — ARIA comboboxes/selects, switches, and ProseMirror/tiptap editors are filled through their accessibility contract, so shadcn, Radix and friends work with no adapter. A widget fieldfox can't confirm is left untouched rather than guessed at.
-- **Adjustment mode for integrators** — an opt-in `adjust` overlay to inspect and live-edit each field's `data-ff-*` annotations, test them against a fill, and copy the result back to source (dev-only; not for production pages).
-- **Safety invariants** — never auto-submits; fills or leaves each field with per-field readback-or-revert; disables affected fields while a request is in flight.
-- **Credentials stay server-side, in both modes** — the [Hono](https://hono.dev) server holds the OpenAI-compatible API key and enforces every guardrail (site keys, origin allowlist, rate limits, per-key daily token budget, image caps). No LLM call ever happens in the browser.
-- **Runs with no credentials at all** — the test suite mocks at the *provider* boundary, so a fresh clone runs the full e2e acceptance suite without a single API key.
+[Try locally](#try-it-locally) · [Embed](#embed-in-your-app) · [How it works](#how-it-works) · [Self-host](#self-host-with-your-model) · [Contribute](#development--contributing)
 
-## How it works
+</div>
 
-1. The user clicks the trigger icon at the form's top-right corner and describes what to fill (text, images, or documents).
-2. The widget introspects the form into a field schema and `POST`s it, with the user's context, to the fill endpoint — your own server when self-hosting, ours in hosted mode.
-3. The server applies its guardrails, builds a two-lane prompt (trusted site-author hints kept separate from untrusted user content), and calls the OpenAI-compatible provider under a structured-output contract.
-4. The provider returns a fill plan; the server re-validates it, drops any hallucinated fields or out-of-option values, and responds.
-5. The widget applies the plan field by field. Each field is set or left untouched, and every write is read back and reverted if it didn't take. The form is never submitted — the user reviews and submits.
-
-## Hosted (not live yet)
-
-The goal is that you paste one snippet and it fills forms immediately — no account, no API key, no server, no config:
-
-```html
-<!-- Not live yet: this snippet has no backend to reach today. -->
-<script src="https://cdn.jsdelivr.net/npm/@fieldfox/widget@0.1.1/dist/fieldfox.js"></script>
-<field-fox target="#my-form"></field-fox>
+```text
+       /\   /\
+      /  \_/  \       Have the information? Skip the retyping.
+      \  o o  /
+       \  v  /        source  -->  FieldFox  -->  your form
+        \___/                                   your review
 ```
 
-**This does not work yet.** The widget half is built and shipped — with no `endpoint` attribute it already posts to a compiled-in hosted URL — but the service behind that URL is not deployed and the hostname is a placeholder. Pasting the snippet today fails at the network layer. Use [self-hosting](#self-hosted-works-today), which works now.
+Your user has an email, a business card, or a product sheet. Your app has a form. FieldFox connects the two: they provide the source, FieldFox fills supported fields, and they review the result in your existing interface. **FieldFox never submits the form.**
 
-When it does land, here is how it will be metered, so you can judge it before you adopt it:
+## Less typing. More control.
 
-- **Your site is recognized from the request's `Origin`.** Nothing to obtain, nothing to configure.
-- **A free allowance per site per day**, served on a deliberately cheap model. The exact allowance is set by the operator and published before launch — see [docs/CLOUD.md](docs/CLOUD.md) for the mechanism.
-- **When the allowance runs out**, the widget says so plainly — *"That used up the free fills for this site today — your form is unchanged"* — alongside a link to create an account. It is a self-service offer, not a generic error, and your form is left untouched.
-- **Signup is never a precondition for trying it** — only for continuing past the free allowance.
-- **Self-hosting is never metered.** If you run the server, none of the above applies to you.
+| | What you can do |
+|---|---|
+| ✍️ **Paste what you know** | Turn free text into fields: contact details, dates, descriptions, and more. |
+| 🖼️ **Bring the source** | Paste or upload images. Enable PDF and text-file attachments with `accept-documents`; extraction depends on your model's capabilities. |
+| 🧩 **Keep your form** | Add a custom element beside native controls, React forms, supported ARIA widgets, or ProseMirror/tiptap editors. |
+| 🎯 **Guide the fill** | Add field hints and examples, exclude fields with `data-ff-ignore`, and tune annotations in development with adjustment mode. |
+| 👀 **Keep the human in charge** | Review and edit the values in place. The widget reports its result; your app owns what happens next. |
+| 🏠 **Run it on your terms** | Self-host the MIT widget and server with your own compatible model provider. Cloud uses the same fill engine. |
 
-## Self-hosted (works today)
+**A concrete example:** open a product card, attach a supplier's labelled specification sheet, and fill the stated name, SKU, material, and dimensions. Review the values against the source and add your internal note manually. The [product-card example](examples/plain-html/products.html) includes a field excluded from FieldFox and a local review action.
+
+![Local product card with eight sample values filled, an empty weight field, and a preserved manual note.](docs/assets/product-card-preview.png)
+
+*Actual local UI after a deterministic mock-provider fill. This shows the workflow, not model extraction accuracy.*
+
+## Availability
+
+**FieldFox is pre-launch software.** The open-source packages and local examples are available; the complete cloud onboarding and payment journey is still being prepared.
+
+| Path | Status | What it means for you |
+|---|---|---|
+| **FieldFox Cloud** | Pre-launch | The intended default: copy one snippet, get a free first fill before signup, then add capacity when needed. The public zero-config snippet is not ready for adoption yet. |
+| **Self-hosted** | Available for evaluation | Run the widget and server with your own provider credentials. No FieldFox account or FieldFox usage metering; your provider and infrastructure costs still apply. |
+| **Local preview** | Available without credentials | Explore the real widget/server flow with a deterministic mock provider. No model account required. |
+
+<details>
+<summary><strong>Release and cloud status — checked September 18, 2026</strong></summary>
+
+- Published packages: widget **0.3.0**, server **0.5.0**, shared **0.2.0**.
+- This checkout contains widget **0.3.1**, including a fix for script loading on host pages without a UTF-8 charset declaration. Publication is pending.
+- An anonymous hosted API has been deployed. That does **not** mean the default snippet or complete cloud product is launch-ready: the widget's default endpoint still points to a placeholder hostname.
+- Accounts, email-code login, usage, and dashboard code have landed in the separate cloud repository. Deployment of that integrated version, provider spend controls, payments, and the public launch remain separate gates.
+
+Use an explicit endpoint for self-hosted evaluation. Do not copy an endpoint-free snippet into production expecting a launched cloud service.
+
+</details>
+
+## Try it locally
+
+Use **Node.js 22.13+** and the repository's pinned **pnpm 11.5.1**. The pinned package manager needs the newer Node version even though some package manifests still declare Node 20.
 
 ```sh
 git clone https://github.com/Valaris-Studio/fieldfox.git
 cd fieldfox
-pnpm install
+pnpm install --frozen-lockfile
+FIELDFOX_E2E_SERVER_PORT=8787 node scripts/e2e-env.mjs
 ```
 
-Point the server at your OpenAI-compatible provider and define at least one site key, then run the dev harness:
+Open [the local product-card demo](http://localhost:8080/examples/plain-html/products.html), click the fox beside the form, enter some sample context, and choose **Fill form**. Review the populated fields and try editing them yourself.
+
+> **This preview uses canned values.** It demonstrates the interaction, request path, and field application. It does not extract your text or attachments with a real model and is not evidence of extraction accuracy. Use the provider setup below to evaluate your own material.
+
+The same harness serves [a basic HTML form](http://localhost:8080/examples/plain-html/) and [a React example](http://localhost:5173). Keep ports `8080`, `5173`, `8787`, `8793`, and `8795` free. The explicit `8787` override connects the example pages to the mock-backed API. Stop the harness before running browser tests, which start their own stack.
+
+## Embed in your app
+
+For a bundled frontend, install the published widget:
 
 ```sh
-export FIELDFOX_LLM_BASE_URL="https://api.openai.com/v1"
-export FIELDFOX_LLM_API_KEY="sk-..."
-export FIELDFOX_LLM_MODEL="gpt-4o-mini"
+npm install @fieldfox/widget@0.3.0
+```
+
+```js
+import '@fieldfox/widget'; // registers <field-fox>
+```
+
+Point it at your form and your server:
+
+```html
+<form id="contact-form">
+  <label for="name">Name</label>
+  <input id="name" name="name" />
+
+  <label for="email">Email</label>
+  <input id="email" name="email" type="email" />
+
+  <label for="internal-note">Internal note</label>
+  <textarea id="internal-note" data-ff-ignore></textarea>
+</form>
+
+<field-fox
+  target="#contact-form"
+  endpoint="/api/fill"
+  site-key="ffx_pk_YOUR_SITE_KEY"
+  accept-documents
+></field-fox>
+```
+
+`/api/fill` must reach your FieldFox server; replace the public site-key placeholder with one configured there. Model credentials stay on the server. Remove `accept-documents` if you only want text and images.
+
+For a plain HTML page, the local build exposes `packages/widget/dist/fieldfox.js`. For a production CDN embed, pin an exact published version and its matching SRI hash. `node scripts/gen-snippet.mjs` generates that pair from CDN bytes and refuses a mismatched local build. **On this checkout it cannot generate a 0.3.1 snippet until that version is published.** See the [embedding reference](docs/EMBEDDING.md) for attributes, events, styling, and framework integration.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Text, images or documents] --> B[FieldFox widget]
+    F[Your form and author hints] --> B
+    B -->|Schema and source context| C[FieldFox server]
+    C -->|Guarded request| D[Compatible model provider]
+    D -->|Proposed fill plan| C
+    C -->|Validated plan| B
+    B --> E[Apply supported fields and read back]
+    E --> R[User reviews and edits]
+    R --> H[Your app owns the next action]
+```
+
+The widget reads the form structure and sends it with the supplied context to the server. The server applies configured guardrails, separates site-author guidance from user content, requests structured output, and validates the returned plan. The widget applies supported writes and checks them by reading the field back.
+
+**Readback checks that a write took effect; it does not prove the model extracted the right fact.** Users should compare the result with the source. A skipped field stays as it was. A failed confirmation triggers a restore attempt for that field. Cancellation can leave previously confirmed fields filled; this is not an all-or-nothing transaction.
+
+### Forms it understands
+
+| Control | Support |
+|---|---|
+| Native text, email, date, number, textarea, select, checkbox, radio | Supported controls are filled directly. |
+| React controlled inputs | Native setters and input/change events; covered by React 19 fixtures. |
+| ARIA selects, comboboxes, switches | Supported accessibility patterns are filled through their roles and accessible names. Your component's behavior still matters. |
+| Rich-text editors | ProseMirror-based editors, including tiptap. |
+| Unsupported custom controls, Slate/Lexical, generic contenteditable | Left unwritten. |
+
+Matching an option tolerates case, accents, and whitespace differences. It does not treat “Gold” as “Gold Plus.” See the [coverage guide](docs/COVERAGE.md) for the fixture matrix and limits of the measurements.
+
+## Self-host with your model
+
+After installing the repo, stop the mock harness and configure a compatible provider:
+
+```sh
+export FIELDFOX_LLM_BASE_URL="https://YOUR_PROVIDER/v1"
+export FIELDFOX_LLM_API_KEY="YOUR_SERVER_SIDE_KEY"
+export FIELDFOX_LLM_MODEL="YOUR_MODEL_ID"
 export FIELDFOX_SITE_KEYS='{"ffx_pk_dev0000000000000000000000000000":{"origins":["http://localhost:8080","http://localhost:5173"],"dailyTokenBudget":1000000}}'
 
 pnpm dev
 ```
 
-`pnpm dev` builds the widget and starts three processes: the API on `http://localhost:8787`, a plain-HTML example on `http://localhost:8080`, and a React example on `http://localhost:5173`. Open the plain-HTML host and click the fox icon at the form's top-right corner.
+Use a provider exposing compatible chat-completions and structured-output behavior; image and PDF support depend on the selected model. The harness builds the widget and starts the API on `8787`, HTML examples on `8080`, and React on `5173`.
 
-### Product-card example
+For deployment, configuration, version compatibility, and operational limits, read [Self-hosting](docs/SELF-HOSTING.md). The [server package reference](packages/server/README.md) covers composing `createApp()` into your own service.
 
-Open `http://localhost:8080/examples/plain-html/products.html` in the local harness to complete a product card from text, a labelled image or a PDF. The example keeps a manual-only internal note, leaves unsupported data untouched and lets the operator correct values and mark a local review without saving or submitting the form. It uses the same OSS widget and server as the other examples.
+### Data and trust
 
-The synthetic sample in `e2e/product-card.pdf` and `e2e/product-card.png` exercises attachment transport with predetermined provider responses. Those tests do not demonstrate real model extraction quality. The development endpoint and site key follow the harness below; LLM credentials stay on the server.
+- **Your source is sent for processing.** Form schema, included field context, and supplied text/attachments travel to your configured server and model provider. Self-hosting does not make a remote provider local.
+- **Exclude fields deliberately.** `data-ff-ignore` excludes a field or subtree from introspection and filling. Audit the outgoing schema before integrating sensitive forms.
+- **Keys have different jobs.** A site key is a public identifier. The provider API key is a server secret. Origin checks, rate limits, and budgets constrain use; Origin alone is not authentication.
+- **Review remains essential.** Models can make mistakes. FieldFox validates the plan and checks writes, while your application retains its own validation and submission flow.
 
-### No LLM credentials? Run the whole thing anyway
-
-Fieldfox mocks at the **provider boundary** ([`e2e/mock-provider.mjs`](e2e/mock-provider.mjs)), not at our own HTTP layer. One command boots a mock OpenAI-compatible provider alongside the full harness:
-
-```sh
-FIELDFOX_E2E_SERVER_PORT=8787 node scripts/e2e-env.mjs
-```
-
-You get a real fill end to end — real widget, real server, real guardrails, real wire contract — before signing up with any provider. The same property means **`pnpm test:e2e` passes on a clean clone with zero credentials**, so a contributor can run the entire acceptance suite on day one.
-
-`pnpm test:simulation` goes one step further down the stack: it runs the real widget and server against a mock provider that closes the TCP connection mid-body, proving a transport failure leaves the form untouched and a retry recovers.
-
-The port override matters: the example pages POST to `:8787`, while the script's default (`8794`, chosen because `8787` is often occupied on dev machines) is only reachable by the e2e suite, which remaps the port in-page.
-
-## Embed it
-
-Production embeds pin an **exact** widget version on jsDelivr (semver ranges cache ~7 days on the CDN and are not production-safe) plus an SRI hash of the bundle. Generate the snippet:
-
-```sh
-node scripts/gen-snippet.mjs
-```
-
-The hash comes from the bytes the CDN serves for the pinned version, so it cannot disagree with the URL. If you have a local build that differs from the published one, the script refuses to emit a snippet rather than printing one the browser would block.
-
-It prints a ready-to-paste snippet:
-
-```html
-<script
-  src="https://cdn.jsdelivr.net/npm/@fieldfox/widget@0.1.1/dist/fieldfox.js"
-  integrity="sha384-xx/rwrfhjvkfbfxXp5oDcuZVhIpqlNyDT55RaqpKM2kv8dbbsqrnuTu0Rv4pZECw"
-  crossorigin="anonymous"
-></script>
-<field-fox
-  target="#my-form"
-  endpoint="https://fieldfox.example.com/api/fill"
-  site-key="ffx_pk_..."
-></field-fox>
-```
-
-The version is pinned exactly and the hash is the sha384 of that exact file, so
-the CDN cannot serve you different bytes than the ones published. Re-run the
-generator after every release — a new version means a new hash.
-
-npm consumers import the ESM entry instead (it self-registers the element on import):
-
-```js
-import { registerFieldFox } from '@fieldfox/widget';
-registerFieldFox();
-```
-
-While integrating, add the `adjust` attribute to open [adjustment mode](docs/EMBEDDING.md#adjustment-mode) — a dev overlay for authoring and testing per-field `data-ff-*` hints — then remove it before shipping to production.
-
-See [docs/EMBEDDING.md](docs/EMBEDDING.md) for the full attribute reference, author hints, styling parts, and framework notes.
-
-## Security model
-
-- **Site keys are publishable.** A site key (`ffx_pk_…`, Stripe-publishable-key style) is an identifier, not a secret — it is safe in browser HTML. The server scopes each key to an origin allowlist and a daily token budget.
-- **Origin allowlist is defense-in-depth.** The `Origin` header is exact-matched against the key's allowlist, but because non-browser clients can spoof it, the site key plus budget and rate limits are the primary controls.
-- **Budgets and a kill switch.** Each key has a per-day token ceiling; crossing it trips a kill switch that refuses further requests until the window resets.
-- **Trusted vs untrusted prompt lanes.** Site-owner hints (`data-ff-*`, `context`) ride a trusted lane; user text, images, and documents ride a physically separate untrusted lane the model is instructed to treat as data, never instructions.
-- **Privacy.** Nothing from the request body is logged — no context text, field values, or image bytes. Only operational metadata (key id, counts, tokens, latency, error class).
-
-Found a vulnerability? See [SECURITY.md](SECURITY.md) — it covers private reporting, what is in scope, and the design risks we have deliberately accepted (so you can skip reporting those).
-
-## Browser support
-
-Evergreen Chrome, Firefox, and Edge, plus Safari 15.4+. The in-flight tracer effect uses `mask-composite`, which sets the Safari 15.4 floor. The input panel opens via the [Popover API](https://developer.mozilla.org/en-US/docs/Web/API/Popover_API) (Baseline; Safari 17+) with a `position: fixed` fallback on older engines.
-
-## Documentation
-
-- [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md) — deploy and configure the server.
-- [docs/EMBEDDING.md](docs/EMBEDDING.md) — integrate the widget into a page or app.
-- [docs/CLOUD.md](docs/CLOUD.md) — the hosted free lane: attribution, limits, and what exhaustion looks like.
-- [docs/ROADMAP.md](docs/ROADMAP.md) — the plan of record for the hosted tier.
-- [packages/server/README.md](packages/server/README.md) — terse package-level server reference.
-- [docs/PLAN.md](docs/PLAN.md) and [docs/RESEARCH.md](docs/RESEARCH.md) — architecture, locked decisions, and the research behind them.
-
-## Roadmap
-
-The hosted service described [above](#hosted-not-live-yet) is the next milestone: deploy the backend, then accounts and credits. Self-hosting stays first-class and permanently supported throughout — same MIT stack, your own credentials, no metering.
-
-Until it ships, self-hosting is the only way to run Fieldfox. See [docs/ROADMAP.md](docs/ROADMAP.md) for the plan of record.
+See [SECURITY.md](SECURITY.md) for the security model and private vulnerability reporting.
 
 ## Development & contributing
 
-The repo is a pnpm monorepo: `packages/widget` (custom element, zero runtime deps), `packages/server` (Hono service), `packages/shared` (zod wire contract), plus `examples/` and an `e2e/` Playwright suite.
-
-```sh
-pnpm verify      # build + lint + unit tests + bundle-size gate
-pnpm test:e2e    # Playwright acceptance suite
+```text
+fieldfox/
+  packages/widget/    <field-fox>, introspection, controls, fill UI
+  packages/server/    Hono API, provider calls, plan validation
+  packages/shared/    Versioned wire schemas and types
+  examples/          Plain HTML and React integration fixtures
+  e2e/               Browser flows with a mock model provider
 ```
 
-Both run with **no credentials** — see [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor path, the local-gates setup (there is no hosted CI), and the example-port gotcha.
+```sh
+pnpm verify                 # build, configured lint scripts, unit tests, size gate
+pnpm exec playwright install
+pnpm test:e2e               # browser acceptance flows
+pnpm test:simulation        # interrupted provider response and retry
+```
 
-Releases go through [changesets](https://github.com/changesets/changesets): `pnpm changeset` → `pnpm version-packages` → `pnpm release`. `@fieldfox/widget` and `@fieldfox/shared` version in lockstep; the server and examples stay private.
+Tests use a mock at the provider boundary; no provider credentials are needed. The widget has a **35 KB gzip eager-bundle budget** and imports shared types without bundling the schema runtime. Gates run locally; this project does not depend on hosted CI.
 
-**`pnpm release` is the only sanctioned publish path.** Publishing by hand from inside a package directory is what shipped 0.1.0 uninstallable: `npm publish` does not rewrite `workspace:*` dependency specs, so consumers got a manifest npm refuses with `EUNSUPPORTEDPROTOCOL`. The script refuses to run outside the repo root, asserts no `workspace:`/`link:`/`file:` spec survived into the packed tarball, and installs that tarball into a scratch directory to prove it resolves — all before the registry sees anything. Rehearse with `pnpm release:dry`.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing code. Releases use Changesets and `pnpm release`; rehearse with `pnpm release:dry`. The release script validates packed dependencies and installs the tarball before publication. The cloud service composes the published OSS server from a separate repository.
 
-Project coordination happens on an internal Valaris board, with decisions mirrored in [docs/PLAN.md](docs/PLAN.md).
+## Explore further
 
-## License
+| Guide | Start here when you want to… |
+|---|---|
+| [Embedding](docs/EMBEDDING.md) | Integrate, style, annotate, or listen for `fieldfox:result`. |
+| [Self-hosting](docs/SELF-HOSTING.md) | Configure and operate your own server. |
+| [Cloud behavior](docs/CLOUD.md) | Understand the free allowance and exhaustion path. |
+| [Coverage](docs/COVERAGE.md) | Inspect supported form fixtures and how coverage is measured. |
+| [Architecture](docs/PLAN.md) | Understand the original design and technical decisions. |
+| [Roadmap background](docs/ROADMAP.md) | Read the delivery model and historical phase plan. |
 
-MIT — see [LICENSE](LICENSE).
+Current project status, milestones, session handoffs, and decisions are maintained in Backplane. Public integration contracts and runnable examples live in this repository.
+
+---
+
+Built by **[Valaris Studio](https://valaris.studio)**. Licensed under [MIT](LICENSE).

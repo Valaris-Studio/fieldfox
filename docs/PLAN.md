@@ -1,8 +1,9 @@
 # Fieldfox — Plan
 
-The decisions doc. Grounded in `docs/RESEARCH.md`; mirrors the Valaris board
-**Fieldfox** (`internal-projects`) definition. Cards cite this doc by
-`docs/PLAN.md §N`.
+Historical architecture and decision background, grounded in `docs/RESEARCH.md`.
+Cards cite this document by `docs/PLAN.md §N`. The **Fieldfox** board in Backplane
+(`internal-projects`) owns current decisions and status; read its definition and
+latest pinned handoff before acting. See [AGENTS.md](../AGENTS.md) for discovery.
 
 ---
 

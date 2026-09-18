@@ -1,8 +1,10 @@
 # Roadmap: open source + micro-SaaS
 
-This document is the plan of record for getting Fieldfox from "published widget with
-a free lane on a laptop" to "open-source project people trust, plus a hosted service
-that bills." Board cards cite it by section.
+This is the historical delivery plan, written July 27, 2026. Board cards still cite
+its sections. **Current status, milestones, and sequencing live in Backplane**:
+Internal Projects → Fieldfox. Start with the current pinned handoff and definition;
+see [AGENTS.md](../AGENTS.md) for the board identifier. Status snapshots below are
+historical, not a statement of current availability.
 
 Written 2026-07-27. The decisions in §1 are locked; the rest is sequencing.
 
