@@ -172,6 +172,61 @@ describe('data-ff-ignore', () => {
 });
 
 describe('fillable flag', () => {
+  test('excluded sensitive control text does not reappear through nearby or referenced labels', () => {
+    const host = mount(`
+      <form>
+        <label id="shared-label">Ordinary label<textarea autocomplete="cc-number">synthetic-sensitive-text</textarea><input name="wrapped" /></label>
+        <select id="card-options" autocomplete="cc-exp"><option>synthetic-sensitive-option</option></select>
+        <input name="neighbor" aria-labelledby="shared-label card-options" />
+        <div role="textbox" autocomplete="one-time-code"><input name="nested-code" value="synthetic-nested-secret" /></div>
+      </form>
+    `);
+    const { schema } = introspectForms([host.querySelector('form')!]);
+    expect(schema.fields.map((field) => field.name)).toEqual(['wrapped', 'neighbor']);
+    expect(JSON.stringify(schema)).not.toContain('synthetic-sensitive-text');
+    expect(JSON.stringify(schema)).not.toContain('synthetic-sensitive-option');
+    expect(JSON.stringify(schema)).not.toContain('synthetic-nested-secret');
+    expect(schema.fields[0].labelCandidates).toContain('Ordinary label');
+  });
+
+  test.each(['one-time-code', 'cc-number', 'cc-csc', 'cc-exp', 'cc-name', 'section-checkout billing CC-NUMBER', ' SECTION-login\tONE-TIME-CODE '])(
+    'autocomplete %s is manual-only and absent from the schema', (autocomplete) => {
+      const host = mount('<form><input name="manual" value="synthetic-sensitive-value" /><input name="ordinary" readonly value="ordinary-context" /></form>');
+      host.querySelector('[name="manual"]')!.setAttribute('autocomplete', autocomplete);
+      const { schema, resolve } = introspectForms([host.querySelector('form')!]);
+      expect(schema.fields.map((field) => field.name)).toEqual(['ordinary']);
+      expect(JSON.stringify(schema)).not.toContain('synthetic-sensitive-value');
+      expect(resolve(schema.fields[0].id)).toBe(host.querySelector('[name="ordinary"]'));
+    },
+  );
+
+  test('ordinary autocomplete tokens remain available for filling and context', () => {
+    const host = mount('<form><input name="address" autocomplete="section-home billing street-address" value="10 Main Street" /></form>');
+    const { schema } = introspectForms([host.querySelector('form')!]);
+    expect(schema.fields[0]).toMatchObject({ name: 'address', fillable: true, currentValue: '10 Main Street' });
+  });
+
+  test('nonempty passwords never contribute current values, including readonly passwords', () => {
+    const host = mount(`
+      <form>
+        <input name="password" type="password" value="synthetic-password-secret" />
+        <input name="readonly-password" type="password" readonly value="synthetic-readonly-secret" />
+        <input name="readonly-context" readonly value="ordinary-context" />
+      </form>
+    `);
+    const { schema } = introspectForms([host.querySelector('form')!]);
+    const passwords = schema.fields.filter((field) => field.kind === 'password');
+    expect(passwords).toHaveLength(2);
+    for (const field of passwords) {
+      expect(field.fillable).toBe(false);
+      expect(field).not.toHaveProperty('currentValue');
+    }
+    expect(JSON.stringify(schema)).not.toContain('synthetic-password-secret');
+    expect(JSON.stringify(schema)).not.toContain('synthetic-readonly-secret');
+    expect(schema.fields.find((field) => field.name === 'readonly-context')?.currentValue)
+      .toBe('ordinary-context');
+  });
+
   test('password and readonly fields are present but fillable:false', () => {
     const host = mount(`
       <form>

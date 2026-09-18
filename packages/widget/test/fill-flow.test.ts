@@ -89,6 +89,41 @@ test('a custom endpoint attribute overrides the default', async () => {
   expect(fetchSpy.mock.calls[0][0]).toBe('https://srv.example.com/fill');
 });
 
+test('the outgoing POST excludes password values while preserving readonly context', async () => {
+  const { form } = mountForm();
+  form.insertAdjacentHTML('beforeend', `
+    <input name="password" type="password" value="synthetic-password-secret" />
+    <input name="readonly-password" type="password" readonly value="synthetic-readonly-secret" />
+    <input name="readonly-context" readonly value="ordinary-context" />
+    <input name="otp" autocomplete="section-login ONE-TIME-CODE" value="synthetic-otp-secret" />
+    <input name="card-number" autocomplete="section-checkout billing CC-NUMBER" value="synthetic-card-secret" />
+  `);
+  fetchSpy.mockResolvedValue(jsonResponse({ fills: [] }));
+
+  fireFill(form);
+  await flush();
+
+  expect(fetchSpy).toHaveBeenCalledOnce();
+  const init = fetchSpy.mock.calls[0][1] as RequestInit;
+  expect(init.method).toBe('POST');
+  const body = init.body as string;
+  expect(body).not.toContain('synthetic-password-secret');
+  expect(body).not.toContain('synthetic-readonly-secret');
+  expect(body).not.toContain('synthetic-otp-secret');
+  expect(body).not.toContain('synthetic-card-secret');
+  expect(JSON.parse(body).formSchema.fields.map((field: { name: string }) => field.name))
+    .toEqual(['email', 'password', 'readonly-password', 'readonly-context']);
+  expect(body).toContain('ordinary-context');
+  for (const field of JSON.parse(body).formSchema.fields.filter((field: { kind: string }) => field.kind === 'password')) {
+    expect(field.fillable).toBe(false);
+    expect(field).not.toHaveProperty('currentValue');
+  }
+  expect(form.querySelector<HTMLInputElement>('[name="password"]')!.value).toBe('synthetic-password-secret');
+  expect(form.querySelector<HTMLInputElement>('[name="readonly-password"]')!.value).toBe('synthetic-readonly-secret');
+  expect(form.querySelector<HTMLInputElement>('[name="otp"]')!.value).toBe('synthetic-otp-secret');
+  expect(form.querySelector<HTMLInputElement>('[name="card-number"]')!.value).toBe('synthetic-card-secret');
+});
+
 test('affected fields are disabled during flight and re-enabled after', async () => {
   const { form, email } = mountForm();
   let disabledDuringFlight = false;

@@ -66,6 +66,32 @@ function mockCaller(...responses: string[]): ChatCompletion {
 }
 
 describe('POST /api/fill', () => {
+  test.each([1, 2, SCHEMA_VERSION])('schema v%s passwords never reach the provider on any retry rung', async (schemaVersion) => {
+    const request = validRequest();
+    request.formSchema.fields.push(
+      { id: 'password', kind: 'password', labelCandidates: ['Password'], fillable: false, currentValue: 'synthetic-password-secret' },
+      { id: 'readonly-password', kind: 'password', labelCandidates: ['Readonly password'], fillable: false, currentValue: 'synthetic-readonly-secret' },
+      { id: 'readonly-context', kind: 'text', labelCandidates: ['Readonly context'], fillable: false, currentValue: 'ordinary-context' },
+      { id: 'otp', kind: 'text', labelCandidates: ['Code'], fillable: true, autocomplete: 'section-login ONE-TIME-CODE', currentValue: 'synthetic-otp-secret' },
+      { id: 'card', kind: 'text', labelCandidates: ['Card'], fillable: true, autocomplete: 'section-checkout billing CC-NUMBER', currentValue: 'synthetic-card-secret' },
+    );
+    const caller = vi.fn<ChatCompletion>()
+      .mockRejectedValueOnce(new ResponseFormatUnsupported('strict not supported'))
+      .mockResolvedValueOnce('malformed plan')
+      .mockResolvedValueOnce(JSON.stringify({ fills: [] }));
+    const response = await post(testApp(caller), { ...request, schemaVersion });
+    expect(response.status).toBe(200);
+    expect(caller).toHaveBeenCalledTimes(3);
+    for (const [args] of caller.mock.calls) {
+      const messages = JSON.stringify(args.messages);
+      expect(messages).not.toContain('synthetic-password-secret');
+      expect(messages).not.toContain('synthetic-readonly-secret');
+      expect(messages).not.toContain('synthetic-otp-secret');
+      expect(messages).not.toContain('synthetic-card-secret');
+      expect(messages).toContain('ordinary-context');
+    }
+  });
+
   test('health still responds', async () => {
     const app = testApp(mockCaller());
     const res = await app.request('/health');

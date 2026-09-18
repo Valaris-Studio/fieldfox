@@ -43,6 +43,39 @@ function userText(messages: ReturnType<typeof buildPrompt>): string {
 }
 
 describe('buildPrompt two-lane segregation', () => {
+  test.each(['one-time-code', 'cc-number', 'cc-csc', 'section-checkout billing CC-NUMBER', ' SECTION-login\tONE-TIME-CODE '])(
+    'older-client autocomplete %s is excluded from both prompt lanes', (autocomplete) => {
+      const request = baseRequest();
+      request.formSchema.fields.push({
+        id: 'sensitive-control', kind: 'text', labelCandidates: ['Sensitive control'], fillable: true,
+        autocomplete, currentValue: 'synthetic-sensitive-value', authorHints: { hint: 'private-author-hint' },
+      });
+      const messages = JSON.stringify(buildPrompt(request));
+      expect(messages).not.toContain('sensitive-control');
+      expect(messages).not.toContain('synthetic-sensitive-value');
+      expect(messages).not.toContain('private-author-hint');
+      expect(messages).toContain('f_name');
+    },
+  );
+
+  test('older-client password current values are omitted without dropping ordinary readonly context', () => {
+    const request = baseRequest({
+      formSchema: {
+        fields: [
+          { id: 'password', kind: 'password', labelCandidates: ['Password'], fillable: false, currentValue: 'synthetic-password-secret' },
+          { id: 'readonly-password', kind: 'password', labelCandidates: ['Readonly password'], fillable: false, currentValue: 'synthetic-readonly-secret' },
+          { id: 'readonly-context', kind: 'text', labelCandidates: ['Readonly context'], fillable: false, currentValue: 'ordinary-context' },
+        ],
+      },
+    });
+    const messages = JSON.stringify(buildPrompt(request));
+    expect(messages).not.toContain('synthetic-password-secret');
+    expect(messages).not.toContain('synthetic-readonly-secret');
+    expect(messages).toContain('ordinary-context');
+    expect(messages).toContain('kind: password');
+    expect(request.formSchema.fields[0].currentValue).toBe('synthetic-password-secret');
+  });
+
   test('system message declares page content is metadata, not instructions', () => {
     const [system] = buildPrompt(baseRequest());
     expect(system.role).toBe('system');

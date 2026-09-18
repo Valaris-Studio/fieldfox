@@ -1,4 +1,5 @@
 import type { FillRequest, FormField } from '@fieldfox/shared';
+import { hasSensitiveAutocomplete } from './sensitive-fields.js';
 
 // The server accepts multiple schema majors (PLAN §0 G3), so the prompt reads
 // everything about a request EXCEPT its version. Relaxing schemaVersion here lets
@@ -53,7 +54,10 @@ function describeField(field: FormField): string {
   if (field.placeholder) parts.push(`  placeholder: ${JSON.stringify(field.placeholder)}`);
   if (field.required != null) parts.push(`  required: ${field.required}`);
   if (field.maxLength != null) parts.push(`  maxLength: ${field.maxLength}`);
-  if (field.currentValue != null) parts.push(`  currentValue: ${JSON.stringify(field.currentValue)}`);
+  // Older widgets can still send these values; never forward them to a provider.
+  if (field.kind !== 'password' && field.currentValue != null) {
+    parts.push(`  currentValue: ${JSON.stringify(field.currentValue)}`);
+  }
   if (field.options?.length) {
     const opts = field.options.map((o) => ({ value: o.value, label: o.label }));
     parts.push(`  options: ${JSON.stringify(opts)}`);
@@ -84,6 +88,7 @@ export interface PromptOptions {
 export function buildPrompt(request: PromptRequest, options: PromptOptions = {}): ChatMessage[] {
   const fence = randomFence();
   const messages: ChatMessage[] = [];
+  const fields = request.formSchema.fields.filter((field) => !hasSensitiveAutocomplete(field));
 
   let system = SYSTEM_INSTRUCTIONS;
   if (options.inlineSchema) {
@@ -93,9 +98,9 @@ export function buildPrompt(request: PromptRequest, options: PromptOptions = {})
   }
   messages.push({ role: 'system', content: system });
 
-  const fieldLines = request.formSchema.fields.map(describeField).join('\n');
+  const fieldLines = fields.map(describeField).join('\n');
 
-  const hintBlocks = request.formSchema.fields
+  const hintBlocks = fields
     .map(describeAuthorHints)
     .filter((b): b is string => b != null);
   const authorLane = hintBlocks.length

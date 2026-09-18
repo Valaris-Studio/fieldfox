@@ -81,6 +81,7 @@ export function introspectForms(roots: Element[]): IntrospectionResult {
       if (!isEnumerableControl(control)) continue;
       if (isDisabled(control)) continue;
       if (hasIgnoreAncestor(control)) continue;
+      if (hasSensitiveAutocompleteAncestor(control)) continue;
 
       seen.add(control);
 
@@ -154,12 +155,31 @@ function hasIgnoreAncestor(el: HTMLElement): boolean {
   return el.closest('[data-ff-ignore]') !== null;
 }
 
+function hasSensitiveAutocomplete(el: HTMLElement): boolean {
+  return (el.getAttribute('autocomplete') ?? '').toLowerCase().split(/\s+/)
+    .some((token) => token === 'one-time-code' || token.startsWith('cc-'));
+}
+
+function hasSensitiveAutocompleteAncestor(el: HTMLElement | null): boolean {
+  for (let ancestor = el; ancestor; ancestor = ancestor.parentElement) {
+    if (hasSensitiveAutocomplete(ancestor)) return true;
+  }
+  return false;
+}
+
+function contextTextOf(node: Node | null): string {
+  if (!node) return '';
+  if (hasSensitiveAutocompleteAncestor(node instanceof HTMLElement ? node : node.parentElement)) return '';
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+  return Array.from(node.childNodes).map(contextTextOf).join('');
+}
+
 function radioGroupMembers(root: Element, member: HTMLInputElement): HTMLInputElement[] {
   const name = member.name;
   if (!name) return [member];
   return Array.from(
     root.querySelectorAll<HTMLInputElement>(`input[type="radio"]`),
-  ).filter((r) => r.name === name && !hasIgnoreAncestor(r));
+  ).filter((r) => r.name === name && !hasIgnoreAncestor(r) && !hasSensitiveAutocompleteAncestor(r));
 }
 
 function buildRadioField(id: string, group: HTMLInputElement[]): FormField {
@@ -188,7 +208,7 @@ function buildRadioField(id: string, group: HTMLInputElement[]): FormField {
 function collectRadioGroupLabels(group: HTMLInputElement[]): string[] {
   const candidates: string[] = [];
   const fieldset = group[0].closest('fieldset');
-  const legend = fieldset?.querySelector('legend')?.textContent?.trim();
+  const legend = contextTextOf(fieldset?.querySelector('legend') ?? null).trim();
   if (legend) candidates.push(legend);
   for (const r of group) {
     candidates.push(...labelCandidatesFor(r).filter((c) => c !== nextSiblingText(r)));
@@ -213,7 +233,7 @@ function buildField(id: string, control: FormControl): FormField {
   } else if (control instanceof HTMLInputElement) {
     if (control.type === 'checkbox') {
       field.currentValue = control.checked ? 'true' : 'false';
-    } else if (control.value) {
+    } else if (kind !== 'password' && control.value) {
       field.currentValue = control.value;
     }
   } else if (control instanceof HTMLTextAreaElement) {
@@ -467,7 +487,7 @@ function resolveLabelledBy(control: HTMLElement): string | null {
   const doc = control.getRootNode() as Document | ShadowRoot;
   const text = ids
     .split(/\s+/)
-    .map((id) => doc.getElementById?.(id)?.textContent?.trim() ?? '')
+    .map((id) => contextTextOf(doc.getElementById?.(id) ?? null).trim())
     .filter(Boolean)
     .join(' ');
   return text || null;
@@ -484,7 +504,7 @@ function textFromLabelsAll(control: HTMLElement): string[] {
   const labels = (control as HTMLInputElement).labels;
   if (!labels || labels.length === 0) return [];
   return Array.from(labels)
-    .map((label) => label.textContent?.trim() ?? '')
+    .map((label) => contextTextOf(label).trim())
     .filter(Boolean);
 }
 
@@ -518,7 +538,7 @@ function isCheckable(control: HTMLElement): boolean {
 function previousText(el: HTMLElement): string {
   let node = el.previousSibling;
   while (node) {
-    const text = node.textContent?.trim();
+    const text = contextTextOf(node).trim();
     if (text) return text;
     node = node.previousSibling;
   }
@@ -528,7 +548,7 @@ function previousText(el: HTMLElement): string {
 function nextSiblingText(el: HTMLElement): string {
   let node = el.nextSibling;
   while (node) {
-    const text = node.textContent?.trim();
+    const text = contextTextOf(node).trim();
     if (text) return text;
     node = node.nextSibling;
   }
@@ -539,8 +559,8 @@ function nextSiblingText(el: HTMLElement): string {
 // label doesn't fold the field's value into its label.
 function ownTextOf(ancestor: Element | null, control: HTMLElement): string {
   if (!ancestor || ancestor === control) return '';
-  const full = ancestor.textContent?.trim() ?? '';
-  const inner = control.textContent?.trim() ?? '';
+  const full = contextTextOf(ancestor).trim();
+  const inner = contextTextOf(control).trim();
   if (!inner) return full;
   return full.replace(inner, '').trim();
 }
