@@ -5,6 +5,7 @@ import { loadConfig, type GuardrailConfig } from './config.js';
 import { InMemoryStore, type RateBudgetStore } from './store.js';
 import { guardrails, type SiteKeyResolver, type FormPolicyResolver } from './guardrails.js';
 import type { MetaLogger } from './log.js';
+import { requestLimits } from './request-limits.js';
 
 // Headers the widget always sends on the POST; the floor even when a client
 // doesn't preflight-negotiate its own set.
@@ -88,6 +89,8 @@ export function createApp(options: AppOptions = {}): Hono {
   // reaching guardrails (which parse a JSON body). A preflight can't be
   // authenticated — the POST's guardrails remain the enforcement point.
   app.options('/api/fill', preflight);
+
+  app.use('/api/fill', (c, next) => requestLimits(getConfig())(c, next));
 
   // Guardrails run BEFORE the fill handler (PLAN §0, card D2). The config getter
   // resolves per request so a lazily-loaded config is picked up.

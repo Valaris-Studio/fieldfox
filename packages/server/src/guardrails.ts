@@ -10,6 +10,7 @@ import {
   type SiteKeyPolicy,
 } from './config.js';
 import type { RateBudgetStore } from './store.js';
+import { cancellationResponse } from './request-limits.js';
 import { consoleMetaLogger, type MetaLogger } from './log.js';
 
 export const SITE_KEY_HEADER = 'x-fieldfox-key';
@@ -453,6 +454,8 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
       }
     }
 
+    const cancelled = cancellationResponse(c);
+    if (cancelled) return cancelled;
     await store.chargeTokens(siteKey, estimatedTokens, policy.dailyTokenBudget);
 
     c.set('fieldfoxSiteKey', siteKey);
@@ -483,7 +486,17 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
       ...(formId ? { formId } : {}),
     });
 
-    await next();
+    try {
+      const cancelled = cancellationResponse(c);
+      if (cancelled) return cancelled;
+      await next();
+    } finally {
+      // Before a provider attempt the reservation is known to cost nothing.
+      // After one, an abort cannot establish that the provider billed nothing.
+      if (!c.get('fieldfoxProviderStarted')) {
+        await reconcile(store, siteKey, policy, estimatedTokens, 0);
+      }
+    }
   };
 }
 

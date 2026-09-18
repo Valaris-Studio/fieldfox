@@ -81,7 +81,7 @@ export type FreeTierPolicy = z.infer<typeof FreeTierPolicy>;
 
 const DEFAULT_MAX_IMAGES = 4;
 const DEFAULT_MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB (RESEARCH §6)
-const DEFAULT_MAX_BODY_BYTES = 8 * 1024 * 1024; // headroom over 4×5MB base64 is intentional
+const DEFAULT_MAX_BODY_BYTES = 8 * 1024 * 1024; // total encoded payload, independent of per-image caps
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_RATE_LIMIT = 10; // fills per window, per key and per IP (RESEARCH §6)
 const DEFAULT_RATE_WINDOW_MS = 60_000;

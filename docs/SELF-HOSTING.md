@@ -127,12 +127,25 @@ Everything else — origin allowlist, rate limits, budgets — applies to a reso
 |---|---|---|
 | `FIELDFOX_MAX_IMAGES` | `4` | Max images per request |
 | `FIELDFOX_MAX_IMAGE_BYTES` | `5242880` (5 MB) | Max decoded bytes per image |
-| `FIELDFOX_MAX_BODY_BYTES` | `8388608` (8 MB) | Max request body size |
+| `FIELDFOX_MAX_BODY_BYTES` | `8388608` (8 MB) | Max streamed bytes across JSON and base64 attachments |
 | `FIELDFOX_MAX_REQUEST_TOKENS` | _(unset — no ceiling)_ | Max **estimated** tokens per request. See below. |
-| `FIELDFOX_REQUEST_TIMEOUT_MS` | `30000` | Per-request timeout budget |
+| `FIELDFOX_REQUEST_TIMEOUT_MS` | `30000` | Shared upload + provider deadline, including fallback and repair |
 | `FIELDFOX_RATE_LIMIT` | `10` | Requests per window, per key **and** per IP |
 | `FIELDFOX_RATE_WINDOW_MS` | `60000` | Rate-limit window length |
 | `FIELDFOX_MODEL_ALLOWLIST` | _(unset)_ | Comma-separated allowed model ids |
+
+The **8 MiB** aggregate body cap is enforced while streaming, regardless of
+`Content-Length`, before JSON parsing and provider work. It is independent of the
+5 MiB decoded per-image cap: several maximum-size images exceed the default total.
+Oversized bodies receive `413 request_body_too_large`.
+
+The **30-second** deadline includes upload and all provider attempts. Expiry
+aborts the built-in provider transport and returns `504 request_timeout`; client
+cancellation propagates through the same signal. If embedding `createApp` with a
+custom caller, forward its optional `signal` to your transport. Custom middleware
+can read `fieldfoxRequestSignal` and must bound its own I/O, as must custom stores
+and resolvers. See [cancellation and accounting semantics](../packages/server/README.md#request-limits-and-cancellation).
+
 
 #### Bounding cost, not just size: `FIELDFOX_MAX_REQUEST_TOKENS`
 

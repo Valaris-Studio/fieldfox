@@ -139,9 +139,9 @@ test('affected fields are disabled during flight and re-enabled after', async ()
   expect(email.disabled).toBe(false); // fully restored on completion
 });
 
-test('a server error restores the fields, re-enables the panel, and shows an error', async () => {
+test.each([500, 413, 504])('a server error (%s) restores the fields, re-enables the panel, and shows an error', async (statusCode) => {
   const { el, form, email } = mountForm();
-  fetchSpy.mockResolvedValue(jsonResponse({ error: 'nope' }, 500));
+  fetchSpy.mockResolvedValue(jsonResponse({ error: 'nope' }, statusCode));
 
   fireFill(form);
   await flush();

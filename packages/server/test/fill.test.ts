@@ -10,12 +10,13 @@ import { ResponseFormatUnsupported, type ChatCompletion } from '../src/llm.js';
 // carries the matching key + origin.
 const TEST_KEY = 'ffx_pk_d1testkey0000000000000000000000';
 const TEST_ORIGIN = 'https://test.example';
-function testApp(llmCaller?: ChatCompletion) {
+function testApp(llmCaller?: ChatCompletion, maxBodyBytes?: number) {
   return createApp({
     llmCaller,
     store: new InMemoryStore(),
     logger: () => {}, // silence metadata logs in test output
     config: resolveConfig({
+      maxBodyBytes,
       siteKeys: { [TEST_KEY]: { origins: [TEST_ORIGIN], dailyTokenBudget: 10_000_000 } },
     }),
   });
@@ -247,8 +248,8 @@ describe('POST /api/fill', () => {
     expect(res.status).toBe(200);
   });
 
-  test('an oversize document dataUrl → 400 invalid_request via zod', async () => {
-    const app = testApp(mockCaller());
+  test('an oversize document dataUrl within the configured body limit → 400 via zod', async () => {
+    const app = testApp(mockCaller(), 9 * 1024 * 1024);
     const huge = 'data:application/pdf;base64,' + 'A'.repeat(8 * 1024 * 1024);
     const res = await post(app, {
       ...validRequest(),

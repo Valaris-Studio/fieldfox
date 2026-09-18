@@ -34,9 +34,9 @@ token budget.
 |---|---|---|
 | `FIELDFOX_MAX_IMAGES` | `4` | max images per request |
 | `FIELDFOX_MAX_IMAGE_BYTES` | `5242880` (5 MB) | max decoded bytes per image |
-| `FIELDFOX_MAX_BODY_BYTES` | `8388608` (8 MB) | max request body size |
+| `FIELDFOX_MAX_BODY_BYTES` | `8388608` (8 MB) | max streamed request bytes, including base64 attachments |
 | `FIELDFOX_MAX_REQUEST_TOKENS` | _(unset — no ceiling)_ | max **estimated** tokens per request (text + images + document bytes); refuses `413 request_too_large_for_model` before the provider call |
-| `FIELDFOX_REQUEST_TIMEOUT_MS` | `30000` | per-request timeout budget |
+| `FIELDFOX_REQUEST_TIMEOUT_MS` | `30000` | shared upload + provider deadline; includes fallback and repair |
 | `FIELDFOX_RATE_LIMIT` | `10` | requests per window, per key and per IP |
 | `FIELDFOX_RATE_WINDOW_MS` | `60000` | rate-limit window length |
 | `FIELDFOX_MODEL_ALLOWLIST` | _(unset)_ | comma-separated allowed model ids |
@@ -103,6 +103,9 @@ content).
 |---|---|---|
 | 401 | `unknown_site_key` | missing / unknown `x-fieldfox-key` |
 | 403 | `origin_not_allowed` | `Origin` not on the key's allowlist |
+| 413 | `request_body_too_large` | streamed body exceeds `maxBodyBytes`, before JSON parsing or provider work |
+| 408 | `request_cancelled` | the incoming request signal was aborted |
+| 504 | `request_timeout` | the request deadline expired; provider transport is aborted |
 | 413 | `too_many_images` / `image_too_large` | image caps exceeded |
 | 415 | `unsupported_image` / `unsupported_image_type` | not a data URL / disallowed mime |
 | 422 | `no_fillable_fields` | `formSchema` has no `fillable` field — refused before any provider call |
@@ -179,3 +182,35 @@ cache, so subsequent fills can observe a saved change.
 The consuming application can read the resolved model through
 `fieldfoxModelOverride` in its existing `fillMiddleware`, for model-aware pricing
 or attribution. This extension does not set prices or grant account credits.
+
+
+## Request limits and cancellation
+
+`maxBodyBytes` defaults to **8 MiB (8,388,608 bytes)** across the entire encoded
+request, including JSON and base64 attachments. Bytes are counted while reading,
+even without `Content-Length` or when that header understates the body. This
+aggregate cap applies independently of the 5 MiB decoded per-image limit; four
+maximum-size images do not fit in the default request budget.
+
+`requestTimeoutMs` defaults to **30,000 ms**. One deadline starts before reading
+the body and covers upload, admission and every provider attempt. The built-in
+caller passes the same `AbortSignal` to fetch, including response-body reads,
+fallback and repair. Client cancellation also aborts this signal. A timed-out
+fill returns `504 request_timeout`; a cancelled client request returns
+`408 request_cancelled` if its connection still accepts a response.
+
+A custom `llmCaller` receives optional `signal` alongside its existing arguments.
+Forward it to your transport and reject promptly when aborted. Existing callers
+remain type-compatible, but a caller that ignores cancellation can hold the
+request open until it settles. Custom `fillMiddleware` can read
+`c.get('fieldfoxRequestSignal')`; asynchronous resolvers, stores and middleware
+must bound their own I/O. The server deliberately waits for middleware cleanup
+rather than abandoning it in a timer race. The provider will not start another
+attempt after the signal is aborted.
+
+A composing quota middleware sees the terminal failure status after `await next()`
+and can refund its reservation. Operational token estimates are refunded when no
+provider attempt started. After an attempted call, an abort cannot establish that
+the provider spent nothing, so its estimate remains against the spend ceiling.
+Rate windows and free-allowance counters count attempts and are not refunded.
+Transport cancellation does not guarantee that an upstream provider stops billing.

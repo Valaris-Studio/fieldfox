@@ -16,6 +16,7 @@ import {
   type ChatCompletion,
 } from './llm.js';
 import { reconcile } from './guardrails.js';
+import { cancellationResponse } from './request-limits.js';
 import type { RateBudgetStore } from './store.js';
 import { consoleMetaLogger, type MetaLogger } from './log.js';
 
@@ -150,6 +151,8 @@ export function createFillHandler(
   logger: MetaLogger = consoleMetaLogger,
 ) {
   return async (c: Context): Promise<Response> => {
+    const cancelled = cancellationResponse(c);
+    if (cancelled) return cancelled;
     let body: unknown;
     try {
       body = await c.req.json();
@@ -179,12 +182,18 @@ export function createFillHandler(
       );
     }
 
-    const caller = resolveCaller(injectedCaller);
+    const signal = c.get('fieldfoxRequestSignal');
     // Per-formId model override, resolved by the guardrail middleware. Undefined
     // → the caller uses its default (env) model.
     const modelOverride = c.get('fieldfoxModelOverride');
     try {
-      const { plan: modelPlan, usage } = await planWithLadder(request, caller, { model: modelOverride });
+      signal?.throwIfAborted();
+      const caller = resolveCaller(injectedCaller);
+      const trackedCaller: ChatCompletion = (args) => {
+        c.set('fieldfoxProviderStarted', true);
+        return caller(args);
+      };
+      const { plan: modelPlan, usage } = await planWithLadder(request, trackedCaller, { model: modelOverride, signal });
       const plan = cleanPlan(modelPlan, request.formSchema.fields);
       // Reconcile the pre-call estimate against what the provider actually
       // billed, summed across every rung. `usage` is undefined when no rung
@@ -211,8 +220,11 @@ export function createFillHandler(
         usageReported: usage !== undefined,
         ...(usage !== undefined && { actualTokens: usage }),
       });
+      signal?.throwIfAborted();
       return c.json(plan, 200);
     } catch (err) {
+      const cancelled = cancellationResponse(c);
+      if (cancelled) return cancelled;
       if (err instanceof FillPlanUnrecoverable) {
         return c.json({ error: 'fill_failed', reason: err.stage, message: err.message }, 502);
       }

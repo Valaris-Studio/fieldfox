@@ -23,6 +23,7 @@ export type ChatCompletion = (args: {
   messages: ChatMessage[];
   responseFormat: ResponseFormat;
   model?: string;
+  signal?: AbortSignal;
 }) => Promise<string | ChatCompletionResult>;
 
 // What a provider reported for one call. Every field is optional because
@@ -123,6 +124,7 @@ export interface PlanOptions {
   // Per-formId model override; threaded to every rung so a repair retry uses the
   // same model as the first call.
   model?: string;
+  signal?: AbortSignal;
 }
 
 // Runs the ladder against an injected completion fn and returns a re-validated
@@ -132,7 +134,7 @@ export async function planWithLadder(
   chat: ChatCompletion,
   options: PlanOptions = {},
 ): Promise<LadderResult> {
-  const { model } = options;
+  const { model, signal } = options;
 
   // Usage accrues across EVERY rung: a rung-2 repair retry is a second billable
   // call even though the customer is charged once, so a run that walks the
@@ -145,7 +147,9 @@ export async function planWithLadder(
 
   // Normalizes the two accepted return shapes and banks any reported usage.
   const call = async (messages: ChatMessage[], responseFormat: ResponseFormat): Promise<string> => {
-    const result = await chat({ messages, responseFormat, model });
+    signal?.throwIfAborted();
+    const result = await chat({ messages, responseFormat, model, signal });
+    signal?.throwIfAborted();
     if (typeof result === 'string') return result;
     record(result.usage);
     return result.content;
@@ -189,9 +193,10 @@ export function envLlmConfig(): LlmConfig {
 }
 
 export function createChatCompletion(config: LlmConfig): ChatCompletion {
-  return async ({ messages, responseFormat, model }) => {
+  return async ({ messages, responseFormat, model, signal }) => {
     const res = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
+      signal,
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${config.apiKey}`,
