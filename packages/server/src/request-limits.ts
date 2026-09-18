@@ -1,13 +1,6 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import type { GuardrailConfig } from './config.js';
 
-declare module 'hono' {
-  interface ContextVariableMap {
-    fieldfoxRequestSignal: AbortSignal | undefined;
-    fieldfoxProviderStarted: boolean | undefined;
-  }
-}
-
 class RequestBodyTooLarge extends Error {}
 
 export function cancellationResponse(c: Context): Response | undefined {
@@ -52,7 +45,10 @@ async function readBoundedBody(request: Request, maxBytes: number, signal: Abort
   }
 }
 
-export function requestLimits(config: GuardrailConfig): MiddlewareHandler {
+export function requestLimits(
+  config: GuardrailConfig,
+  prepareOrigin: (c: Context) => Promise<void>,
+): MiddlewareHandler {
   return async (c, next) => {
     const controller = new AbortController();
     const abort = () => controller.abort(new DOMException('client disconnected', 'AbortError'));
@@ -64,6 +60,9 @@ export function requestLimits(config: GuardrailConfig): MiddlewareHandler {
     }, config.requestTimeoutMs);
     c.set('fieldfoxRequestSignal', controller.signal);
     try {
+      controller.signal.throwIfAborted();
+      await prepareOrigin(c);
+      controller.signal.throwIfAborted();
       const bytes = await readBoundedBody(c.req.raw, config.maxBodyBytes, controller.signal);
       // Rebuild only after the bounded read. Hono owns caching from this point,
       // preserving json()/text() for guardrails and composing middleware.

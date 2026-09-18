@@ -3,7 +3,7 @@ import { createFillHandler } from './fill.js';
 import type { ChatCompletion } from './llm.js';
 import { loadConfig, type GuardrailConfig } from './config.js';
 import { InMemoryStore, type RateBudgetStore } from './store.js';
-import { guardrails, type SiteKeyResolver, type FormPolicyResolver } from './guardrails.js';
+import { guardrails, prepareResponseOrigin, type SiteKeyResolver, type FormPolicyResolver } from './guardrails.js';
 import type { MetaLogger } from './log.js';
 import { requestLimits } from './request-limits.js';
 
@@ -90,7 +90,12 @@ export function createApp(options: AppOptions = {}): Hono {
   // authenticated — the POST's guardrails remain the enforcement point.
   app.options('/api/fill', preflight);
 
-  app.use('/api/fill', (c, next) => requestLimits(getConfig())(c, next));
+  app.use('/api/fill', (c, next) => {
+    const config = getConfig();
+    return requestLimits(config, (context) =>
+      prepareResponseOrigin(context, config, options.resolveSiteKey),
+    )(c, next);
+  });
 
   // Guardrails run BEFORE the fill handler (PLAN §0, card D2). The config getter
   // resolves per request so a lazily-loaded config is picked up.

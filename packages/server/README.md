@@ -192,6 +192,14 @@ even without `Content-Length` or when that header understates the body. This
 aggregate cap applies independently of the 5 MiB decoded per-image limit; four
 maximum-size images do not fit in the default request budget.
 
+Limit refusals include CORS headers only for an origin admitted by the supplied
+site key's policy, or an attributable keyless origin when the free lane is enabled.
+The dynamic site-key resolver runs once before body reading to establish response
+visibility; its result is reused by admission. Version/auth refusal precedence
+remains unchanged after parsing. This resolver must bound its own I/O: a resolver
+that ignores its own timeout can delay the response, although the provider never
+starts after the request deadline expires.
+
 `requestTimeoutMs` defaults to **30,000 ms**. One deadline starts before reading
 the body and covers upload, admission and every provider attempt. The built-in
 caller passes the same `AbortSignal` to fetch, including response-body reads,

@@ -19,6 +19,9 @@ export const SITE_KEY_HEADER = 'x-fieldfox-key';
 // pre-call token estimate it reconciles against actual usage post-call).
 declare module 'hono' {
   interface ContextVariableMap {
+    fieldfoxRequestSignal: AbortSignal | undefined;
+    fieldfoxProviderStarted: boolean | undefined;
+    fieldfoxResolvedSiteKey: { key: string; policy: SiteKeyPolicy | undefined; error?: unknown } | undefined;
     fieldfoxSiteKey: string;
     fieldfoxPolicy: SiteKeyPolicy;
     fieldfoxEstimatedTokens: number;
@@ -88,6 +91,37 @@ function isUsablePolicy(value: unknown): value is SiteKeyPolicy {
     typeof candidate.dailyTokenBudget === 'number' &&
     candidate.dailyTokenBudget > 0
   );
+}
+
+// Resolve only response visibility here; the refusal ladder still decides
+// admission after parsing. Reuse dynamic lookup so limits and provider work
+// cannot see different policies within a request.
+export async function prepareResponseOrigin(
+  c: Context,
+  config: GuardrailConfig,
+  resolveSiteKey?: SiteKeyResolver,
+): Promise<void> {
+  const origin = c.req.header('origin');
+  if (!origin) return;
+  const key = c.req.header(SITE_KEY_HEADER);
+  let allowed = !key && !!config.freeTier && origin !== 'null';
+  if (key?.startsWith(SITE_KEY_PREFIX)) {
+    let policy: SiteKeyPolicy | undefined;
+    try {
+      policy = resolveSiteKey ? await resolveSiteKey(key) : config.siteKeys[key];
+    } catch (error) {
+      // Defer lookup failures to auth so malformed/version-skew refusals retain
+      // their precedence even though response visibility needs the lookup early.
+      c.set('fieldfoxResolvedSiteKey', { key, policy: undefined, error });
+      return;
+    }
+    if (resolveSiteKey) c.set('fieldfoxResolvedSiteKey', { key, policy });
+    allowed = isUsablePolicy(policy) && policy.origins.includes(origin);
+  }
+  if (allowed) {
+    c.header('access-control-allow-origin', origin);
+    c.header('vary', 'Origin');
+  }
 }
 
 export interface GuardrailDeps {
@@ -278,9 +312,11 @@ export function guardrails(deps: GuardrailDeps): MiddlewareHandler {
 
       // The resolver, when supplied, is the sole authority: a stale static entry
       // must never outrank a revocation applied in the operator's real store.
-      const resolved = resolveSiteKey
-        ? await resolveSiteKey(presentedKey)
-        : config.siteKeys[presentedKey];
+      const cached = c.get('fieldfoxResolvedSiteKey');
+      if (cached?.key === presentedKey && 'error' in cached) throw cached.error;
+      const resolved = cached?.key === presentedKey
+        ? cached.policy
+        : resolveSiteKey ? await resolveSiteKey(presentedKey) : config.siteKeys[presentedKey];
 
       // A PRESENTED key that resolves to nothing is 401 — never a fallthrough to
       // the free lane. Demoting it there would serve a revoked or typo'd key on

@@ -207,3 +207,74 @@ test('a legacy caller resolving after expiry cannot return success or trigger fa
   expect((await post(app)).status).toBe(504);
   expect(caller).toHaveBeenCalledOnce();
 });
+
+for (const lane of ['static', 'dynamic', 'free'] as const) {
+  test.each(['oversized', 'stalled'])(`${lane} allowed origin can read a %s refusal through CORS`, async (failure) => {
+    const resolver = vi.fn(async () => ({ origins: [origin], dailyTokenBudget: 10000 }));
+    const caller = vi.fn(async () => plan);
+    const app = createApp({ llmCaller: caller, logger,
+      resolveSiteKey: lane === 'dynamic' ? resolver : undefined,
+      config: config({ maxBodyBytes: 16, requestTimeoutMs: 25,
+        ...(lane === 'free' ? { freeTier: { model: 'cheap', rateLimit: 10, rateWindowMs: 60000, dailyTokenBudget: 10000 } } : {}),
+      }),
+    });
+    const request = new Request('http://localhost/api/fill', {
+      method: 'POST', headers: lane === 'free' ? { origin, 'content-type': 'application/json' } : headers,
+      body: failure === 'oversized' ? body : new ReadableStream(), duplex: 'half',
+    } as RequestInit);
+    const response = await app.fetch(request);
+    expect(response.status).toBe(failure === 'oversized' ? 413 : 504);
+    expect(response.headers.get('access-control-allow-origin')).toBe(origin);
+    expect(response.headers.get('vary')).toBe('Origin');
+    expect(caller).not.toHaveBeenCalled();
+    if (lane === 'dynamic') expect(resolver).toHaveBeenCalledOnce();
+  });
+}
+
+test('refusal CORS never reflects an unknown key, revoked dynamic key, wrong origin or null free origin', async () => {
+  for (const requestHeaders of [
+    { ...headers, 'x-fieldfox-key': 'ffx_pk_unknown' },
+    { ...headers, origin: 'https://untrusted.test' },
+    { origin: 'null' },
+  ]) {
+    const app = createApp({ config: config({ maxBodyBytes: 16 }), logger });
+    const response = await app.request('/api/fill', { method: 'POST', headers: requestHeaders, body });
+    expect(response.status).toBe(413);
+    expect(response.headers.has('access-control-allow-origin')).toBe(false);
+  }
+  const revoked = createApp({ config: config({ maxBodyBytes: 16 }), resolveSiteKey: async () => undefined, logger });
+  const response = await post(revoked);
+  expect(response.status).toBe(413);
+  expect(response.headers.has('access-control-allow-origin')).toBe(false);
+});
+
+test('dynamic origin admission reuses its lookup and checks elapsed deadline before provider work', async () => {
+  const resolver = vi.fn(async () => ({ origins: [origin], dailyTokenBudget: 10000 }));
+  const caller = vi.fn(async () => plan);
+  const app = createApp({ config: config(), resolveSiteKey: resolver, llmCaller: caller, logger });
+  expect((await post(app)).status).toBe(200);
+  expect(resolver).toHaveBeenCalledOnce();
+  const delayed = createApp({ config: config({ requestTimeoutMs: 10 }), llmCaller: caller, logger,
+    resolveSiteKey: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return { origins: [origin], dailyTokenBudget: 10000 };
+    },
+  });
+  const response = await post(delayed);
+  expect(response.status).toBe(504);
+  expect(response.headers.get('access-control-allow-origin')).toBe(origin);
+  expect(caller).toHaveBeenCalledOnce();
+});
+
+
+test('pre-read dynamic lookup failure preserves byte, JSON and version refusal precedence', async () => {
+  const resolveSiteKey = async () => { throw new Error('storage unavailable'); };
+  const caller = vi.fn(async () => plan);
+  for (const [payload, expected] of [['not json', 400], [JSON.stringify({ schemaVersion: 999 }), 426]] as const) {
+    const app = createApp({ config: config(), resolveSiteKey, llmCaller: caller, logger });
+    expect((await app.request('/api/fill', { method: 'POST', headers, body: payload })).status).toBe(expected);
+  }
+  const limited = createApp({ config: config({ maxBodyBytes: 16 }), resolveSiteKey, llmCaller: caller, logger });
+  expect((await post(limited)).status).toBe(413);
+  expect(caller).not.toHaveBeenCalled();
+});
