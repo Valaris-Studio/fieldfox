@@ -17,6 +17,7 @@ import {
 } from './llm.js';
 import { reconcile } from './guardrails.js';
 import { cancellationResponse } from './request-limits.js';
+import { hasSensitiveAutocomplete } from './sensitive-fields.js';
 import type { RateBudgetStore } from './store.js';
 import { consoleMetaLogger, type MetaLogger } from './log.js';
 
@@ -58,7 +59,7 @@ function cleanPlan(model: ModelFillPlan, fields: FormField[]): FillPlan {
 
   for (const fill of model.fills) {
     const field = byId.get(fill.fieldId);
-    if (!field) continue; // unknown field id → drop
+    if (!field || !isPlannableField(field)) continue;
 
     if (fill.action === 'set' && (field.kind === 'select' || field.kind === 'radio') && field.options?.length) {
       const allowed = new Set(field.options.map((o) => o.value));
@@ -137,8 +138,12 @@ function buildIsoDate(year: number, month: number, day: number): string | null {
 // planned (shared contract §"Introspection"/RESEARCH §2), so a schema with none
 // of them yields an all-skip plan — a paid provider call with no possible output
 // (pilot-finding 2). The empty-array case is the degenerate subset.
+function isPlannableField(field: FormField): boolean {
+  return field.fillable && field.kind !== 'password' && !hasSensitiveAutocomplete(field);
+}
+
 function hasFillableField(fields: FormField[]): boolean {
-  return fields.some((f) => f.fillable);
+  return fields.some(isPlannableField);
 }
 
 // `store` is passed through so the handler can reconcile the guardrail's
