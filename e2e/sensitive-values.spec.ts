@@ -4,6 +4,7 @@ const SERVER_PORT = Number(process.env.FIELDFOX_E2E_SERVER_PORT ?? 8794);
 
 test('sensitive controls stay manual and their values never cross widget or provider boundaries', async ({ page }) => {
   const marker = `sensitive-values-${crypto.randomUUID()}`;
+  const nestedSecret = 'synthetic-nested-card-secret';
   const values = {
     password: 'synthetic-password-secret',
     'readonly-password': 'synthetic-readonly-secret',
@@ -14,7 +15,7 @@ test('sensitive controls stay manual and their values never cross widget or prov
   await page.locator('field-fox').evaluate((widget, port) => {
     widget.setAttribute('endpoint', `http://localhost:${port}/api/fill`);
   }, SERVER_PORT);
-  await page.locator('#signup-form').evaluate((form, values) => {
+  await page.locator('#signup-form').evaluate((form, { values, nestedSecret }) => {
     for (const [name, value] of Object.entries(values)) {
       const input = document.createElement('input');
       input.name = name;
@@ -30,7 +31,17 @@ test('sensitive controls stay manual and their values never cross widget or prov
     readonlyContext.value = 'ordinary-context';
     readonlyContext.readOnly = true;
     form.append(readonlyContext);
-  }, values);
+    const editor = document.createElement('div');
+    editor.contentEditable = 'true';
+    editor.className = 'ProseMirror';
+    editor.textContent = 'ordinary-editor-context';
+    const card = document.createElement('textarea');
+    card.name = 'nested-card';
+    card.autocomplete = 'cc-number';
+    card.textContent = nestedSecret;
+    editor.append(card);
+    form.append(editor);
+  }, { values, nestedSecret });
 
   await page.locator('field-fox [part="trigger"]').click();
   await page.locator('field-fox [part="context-input"]').fill(`Jane Doe. ${marker}`);
@@ -41,6 +52,8 @@ test('sensitive controls stay manual and their values never cross widget or prov
   const posted = completed.request().postData()!;
   const fields = completed.request().postDataJSON().formSchema.fields as Array<{ name?: string; kind: string; currentValue?: string; fillable: boolean }>;
   for (const value of Object.values(values)) expect(posted).not.toContain(value);
+  expect(posted).not.toContain(nestedSecret);
+  expect(fields.find((field) => field.currentValue === 'ordinary-editor-context')?.fillable).toBe(false);
   expect(fields.some((field) => field.name === 'otp' || field.name === 'card')).toBe(false);
   const passwords = fields.filter((field) => field.kind === 'password');
   expect(passwords).toHaveLength(2);
@@ -55,8 +68,10 @@ test('sensitive controls stay manual and their values never cross widget or prov
   const requests = providerLog.requests.filter((request) => request.prompt.includes(marker));
   expect(requests).toHaveLength(1);
   for (const value of Object.values(values)) expect(requests[0].prompt).not.toContain(value);
+  expect(requests[0].prompt).not.toContain(nestedSecret);
   expect(requests[0].prompt).toContain('ordinary-context');
   await expect(page.locator('field-fox .ff-status')).toContainText('Review');
+  await expect(page.locator('[name="nested-card"]')).toHaveValue(nestedSecret);
   for (const [name, value] of Object.entries(values)) {
     await expect(page.locator(`[name="${name}"]`)).toHaveValue(value);
     await expect(page.locator(`[name="${name}"]`)).toBeEnabled();

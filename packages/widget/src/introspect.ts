@@ -243,10 +243,10 @@ function buildField(id: string, control: FormControl): FormField {
   } else if (kind === 'combobox') {
     // Only the value the trigger ALREADY shows — the option set stays unharvested
     // because enumerating it would mean opening the widget (RESEARCH §9.8 (B)).
-    const committed = control.textContent?.trim();
+    const committed = contextTextOf(control).trim();
     if (committed) field.currentValue = committed;
   } else if (isContentEditable(control)) {
-    const text = control.textContent?.trim();
+    const text = contextTextOf(control).trim();
     if (text) field.currentValue = text;
   }
 
@@ -349,6 +349,8 @@ function selectOptions(select: HTMLSelectElement): FieldOption[] {
 // them (RESEARCH §2, §6).
 function computeFillable(control: HTMLElement, kind: FieldKind): boolean {
   if (kind === 'password') return false;
+  // Replacing a container's contents would also overwrite its manual-only fields.
+  if (Array.from(control.querySelectorAll<HTMLElement>('[autocomplete]')).some(hasSensitiveAutocomplete)) return false;
   // v1.1c: a contenteditable is fillable only when a driver claims it — i.e. a
   // ProseMirror/tiptap editor. Every other editable div (Slate, Lexical, a bare
   // one) keeps the old hard false (RESEARCH §9.3).

@@ -172,6 +172,19 @@ describe('data-ff-ignore', () => {
 });
 
 describe('fillable flag', () => {
+  test.each(['contenteditable="true"', 'contenteditable="true" class="ProseMirror"', 'role="combobox"'])(
+    'container %s keeps sensitive descendants out of its value and cannot overwrite them', (attributes) => {
+      const host = mount(`<form><div ${attributes}>Ordinary context <textarea autocomplete="cc-number">synthetic-nested-card-secret</textarea></div><input name="ordinary" value="permitted-context" /></form>`);
+      const { schema, resolve } = introspectForms([host.querySelector('form')!]);
+      expect(schema.fields).toHaveLength(2);
+      expect(JSON.stringify(schema)).not.toContain('synthetic-nested-card-secret');
+      const container = schema.fields.find((field) => resolve(field.id) === host.querySelector('div'));
+      expect(container).toMatchObject({ currentValue: 'Ordinary context', fillable: false });
+      expect(schema.fields.find((field) => field.name === 'ordinary'))
+        .toMatchObject({ currentValue: 'permitted-context', fillable: true });
+    },
+  );
+
   test('excluded sensitive control text does not reappear through nearby or referenced labels', () => {
     const host = mount(`
       <form>
